@@ -15,6 +15,7 @@ interface EditorToolbarProps {
 export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
   const {
     selectedRouteGroup,
+    selectedDirection,
     isCustom,
     customMeta,
     stops,
@@ -89,29 +90,21 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
       const origIds = new Set(originalStops.map((s) => s.stop_id));
       const currIds = new Set(stops.map((s) => s.stop_id));
 
-      const modifiedStops = stops.map((s) => ({
-        lat: s.stop_lat,
-        lon: s.stop_lon,
-        stop_name: s.stop_name,
-        is_added: !!s.stop_id && !origIds.has(s.stop_id),
-      }));
-
-      const removedStops = originalStops
-        .filter((s) => s.stop_id && !currIds.has(s.stop_id))
-        .map((s) => ({
-          lat: s.stop_lat,
-          lon: s.stop_lon,
-          stop_name: s.stop_name,
-          is_removed: true,
-        }));
-
       const payload: ExportPayload = {
+        // Original stops: flag removed ones so the backend draws X markers
         original_stops: originalStops.map((s) => ({
           lat: s.stop_lat,
           lon: s.stop_lon,
           stop_name: s.stop_name,
+          is_removed: !!s.stop_id && !currIds.has(s.stop_id),
         })),
-        modified_stops: [...modifiedStops, ...removedStops],
+        // Modified stops: current active stops only (no removed ones)
+        modified_stops: stops.map((s) => ({
+          lat: s.stop_lat,
+          lon: s.stop_lon,
+          stop_name: s.stop_name,
+          is_added: !!s.stop_id && !origIds.has(s.stop_id),
+        })),
         route_color: `#${color}`,
       };
 
@@ -157,6 +150,9 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         {shortLabel}
       </Badge>
       <span className="font-medium text-sm truncate max-w-[200px]">{routeLabel}</span>
+      {selectedDirection && (
+        <span className="text-xs text-muted-foreground shrink-0">{selectedDirection}</span>
+      )}
       {isDirty && (
         <span className="text-xs text-amber-500 font-medium">• Unsaved</span>
       )}

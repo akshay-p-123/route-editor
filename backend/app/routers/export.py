@@ -1,18 +1,19 @@
-"""PNG export endpoint using the Mapbox Static Images API."""
+"""PNG export via headless Chromium (Playwright).
 
+One-time setup: `playwright install chromium`
+"""
+
+import asyncio
 import json
-import urllib.parse
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
-import httpx
+import logging
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import APIRouter, HTTPException
+from fastapi.responses import Response
+from playwright.sync_api import sync_playwright, TimeoutError as PlaywrightTimeout
 from pydantic import BaseModel
-from app.config import settings
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/export", tags=["export"])
-
-# Champaign-Urbana center
-DEFAULT_CENTER = [-88.2272, 40.1164]
-DEFAULT_ZOOM = 13
 
 
 class StopPoint(BaseModel):
@@ -31,73 +32,174 @@ class ExportRequest(BaseModel):
     height: int = 800
 
 
-def _stops_to_geojson(stops: list[StopPoint], color: str, opacity: float) -> dict:
-    return {
-        "type": "FeatureCollection",
-        "features": [
+def _build_html(body: ExportRequest) -> str:
+    orig = [[s.lon, s.lat] for s in body.original_stops]
+    mod  = [[s.lon, s.lat] for s in body.modified_stops]
+
+    # original_stops carries is_removed flags; modified_stops is active stops only
+    removed   = [s for s in body.original_stops if s.is_removed]
+    added     = [s for s in body.modified_stops if s.is_added]
+    unchanged = [s for s in body.modified_stops if not s.is_added]
+
+    def markers(stops: list[StopPoint], color: str) -> list[dict]:
+        return [
             {
                 "type": "Feature",
                 "geometry": {"type": "Point", "coordinates": [s.lon, s.lat]},
-                "properties": {"name": s.stop_name},
+                "properties": {"color": color, "name": s.stop_name},
             }
             for s in stops
-        ],
-    }
+        ]
+
+    # Only build line sources when there are enough points
+    sources: dict = {}
+    layers: list[str] = []
+
+    if len(orig) >= 2:
+        sources["orig_line"] = {
+            "type": "geojson",
+            "data": {"type": "Feature", "geometry": {"type": "LineString", "coordinates": orig}, "properties": {}},
+        }
+        layers.append("""map.addLayer({
+          id: 'orig-line', type: 'line', source: 'orig_line',
+          paint: { 'line-color': '#aaaaaa', 'line-width': 3, 'line-dasharray': [4, 3], 'line-opacity': 0.7 }
+        });""")
+
+    if len(mod) >= 2:
+        sources["mod_line"] = {
+            "type": "geojson",
+            "data": {"type": "Feature", "geometry": {"type": "LineString", "coordinates": mod}, "properties": {}},
+        }
+        layers.append(f"""map.addLayer({{
+          id: 'mod-line', type: 'line', source: 'mod_line',
+          paint: {{ 'line-color': {json.dumps(body.route_color)}, 'line-width': 5, 'line-opacity': 0.95 }}
+        }});""")
+
+    for key, stops, color in [
+        ("stops_unchanged", unchanged, "#6b7280"),
+        ("stops_removed",   removed,   "#ef4444"),
+        ("stops_added",     added,     "#22c55e"),
+    ]:
+        sources[key] = {"type": "geojson", "data": {"type": "FeatureCollection", "features": markers(stops, color)}}
+        layers.append(f"""map.addLayer({{
+          id: '{key}', type: 'circle', source: '{key}',
+          paint: {{ 'circle-radius': 7, 'circle-color': '{color}',
+                   'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }}
+        }});""")
+
+    all_lons = [s.lon for s in body.original_stops + body.modified_stops] or [-88.30]
+    all_lats = [s.lat for s in body.original_stops + body.modified_stops] or [40.09]
+    bounds = json.dumps([[min(all_lons), min(all_lats)], [max(all_lons), max(all_lats)]])
+    layers_js = "\n  ".join(layers)
+
+    return f"""<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.css">
+  <script src="https://unpkg.com/maplibre-gl@4/dist/maplibre-gl.js"></script>
+  <style>* {{ margin:0; padding:0 }} #map {{ width:{body.width}px; height:{body.height}px }}</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+const sources = {json.dumps(sources)};
+// Raw stop coordinates for OSRM routing
+const origCoords = {json.dumps(orig)};
+const modCoords  = {json.dumps(mod)};
+
+async function osrmRoute(coords) {{
+  if (coords.length < 2) return coords;
+  const path = coords.map(c => c.join(',')).join(';');
+  try {{
+    const r = await fetch(
+      'https://router.project-osrm.org/route/v1/driving/' + path +
+      '?overview=full&geometries=geojson',
+      {{ signal: AbortSignal.timeout(8000) }}
+    );
+    const d = await r.json();
+    if (d.code === 'Ok' && d.routes?.[0]) return d.routes[0].geometry.coordinates;
+  }} catch(e) {{ console.warn('OSRM failed', e); }}
+  return coords; // straight-line fallback
+}}
+
+const map = new maplibregl.Map({{
+  container: 'map',
+  style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
+  bounds: {bounds},
+  fitBoundsOptions: {{ padding: 60 }},
+  attributionControl: false,
+}});
+
+map.on('load', async function() {{
+  for (const [id, src] of Object.entries(sources)) map.addSource(id, src);
+  {layers_js}
+
+  // Fetch road-following geometry for both lines in parallel, then update sources
+  const [origRoad, modRoad] = await Promise.all([
+    origCoords.length >= 2 ? osrmRoute(origCoords) : Promise.resolve(origCoords),
+    modCoords.length  >= 2 ? osrmRoute(modCoords)  : Promise.resolve(modCoords),
+  ]);
+
+  if (origCoords.length >= 2) {{
+    map.getSource('orig_line').setData({{
+      type: 'Feature', geometry: {{ type: 'LineString', coordinates: origRoad }}, properties: {{}}
+    }});
+  }}
+  if (modCoords.length >= 2) {{
+    map.getSource('mod_line').setData({{
+      type: 'Feature', geometry: {{ type: 'LineString', coordinates: modRoad }}, properties: {{}}
+    }});
+  }}
+
+  // Signal ready after the map re-renders the updated sources, with a fallback.
+  let done = false;
+  function signal() {{ if (!done) {{ done = true; document.body.setAttribute('data-ready', 'true'); }} }}
+  map.once('idle', signal);
+  setTimeout(signal, 4000);
+}});
+
+map.on('error', function(e) {{
+  console.error('MapLibre error', e);
+  setTimeout(function() {{ document.body.setAttribute('data-ready', 'true'); }}, 1000);
+}});
+</script>
+</body>
+</html>"""
 
 
-def _line_geojson(stops: list[StopPoint], color: str) -> dict:
-    return {
-        "type": "Feature",
-        "geometry": {
-            "type": "LineString",
-            "coordinates": [[s.lon, s.lat] for s in stops],
-        },
-        "properties": {"stroke": color, "stroke-width": 4},
-    }
+def _render_png(html: str, width: int, height: int) -> bytes:
+    """Runs Playwright synchronously in a thread — avoids Windows asyncio
+    subprocess limitations with the SelectorEventLoop."""
+    with sync_playwright() as pw:
+        browser = pw.chromium.launch()
+        page = browser.new_page(viewport={"width": width, "height": height})
+        page.set_content(html, wait_until="domcontentloaded")
+        page.wait_for_selector("[data-ready='true']", timeout=20000)
+        png = page.screenshot(type="png")
+        browser.close()
+    return png
 
 
 @router.post("/png")
 async def export_png(body: ExportRequest):
-    # Build simplified GeoJSON overlays encoded in the URL
-    # Original route — faded
-    orig_line = _line_geojson(body.original_stops, "#999999")
-    # Modified route — bold with route color
-    mod_line = _line_geojson(body.modified_stops, body.route_color)
+    html = _build_html(body)
+    loop = asyncio.get_event_loop()
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            png = await loop.run_in_executor(pool, _render_png, html, body.width, body.height)
+    except PlaywrightTimeout:
+        logger.error("Export timed out waiting for map to render")
+        raise HTTPException(
+            status_code=504,
+            detail="Map render timed out — run `playwright install chromium` and ensure the server has internet access.",
+        )
+    except Exception as exc:
+        logger.exception("Export failed: %s", exc)
+        raise HTTPException(status_code=500, detail=str(exc))
 
-    # Stop markers: green = added, red = removed, grey = unchanged
-    added = [s for s in body.modified_stops if s.is_added]
-    removed = [s for s in body.original_stops if s.is_removed]
-    unchanged = [s for s in body.modified_stops if not s.is_added]
-
-    def marker_layer(stops: list[StopPoint], color: str) -> str:
-        fc = _stops_to_geojson(stops, color, 1.0)
-        return f"geojson({urllib.parse.quote(json.dumps(fc))})"
-
-    overlays = [
-        f"geojson({urllib.parse.quote(json.dumps(orig_line))})",
-        f"geojson({urllib.parse.quote(json.dumps(mod_line))})",
-    ]
-    if removed:
-        overlays.append(marker_layer(removed, "#ef4444"))
-    if unchanged:
-        overlays.append(marker_layer(unchanged, "#6b7280"))
-    if added:
-        overlays.append(marker_layer(added, "#22c55e"))
-
-    overlay_str = ",".join(overlays)
-    url = (
-        f"https://api.mapbox.com/styles/v1/mapbox/light-v11/static"
-        f"/{overlay_str}"
-        f"/auto/{body.width}x{body.height}"
-        f"?access_token={settings.mapbox_token}&padding=60"
-    )
-
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-
-    return StreamingResponse(
-        iter([resp.content]),
+    return Response(
+        content=png,
         media_type="image/png",
         headers={"Content-Disposition": "attachment; filename=route-export.png"},
     )

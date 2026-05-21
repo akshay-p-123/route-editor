@@ -2,9 +2,13 @@
  * Typed API client for the FastAPI backend (which proxies MTD API v3).
  * MTD v3 base: https://api.mtd.dev — auth via X-ApiKey header (kept server-side).
  * All responses use the envelope: { result: T | null, error?: {...} | null }
+ *
+ * All requests use relative URLs (/api/*). Next.js rewrites forward them to
+ * the backend server-side using the BACKEND_URL env var. The browser never
+ * contacts the backend directly, so no CORS headers are needed.
  */
 
-const BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
+const BASE = "";
 
 async function fetchJSON<T>(
   path: string,

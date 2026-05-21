@@ -6,7 +6,6 @@ class Settings(BaseSettings):
     mtd_api_base: str = "https://api.mtd.dev"
     supabase_url: str
     supabase_service_role_key: str
-    mapbox_token: str
     cors_origins: list[str] = ["http://localhost:3000"]
 
     class Config:

@@ -71,6 +71,7 @@ export default function SavedRoutesDashboard({ onClose }: SavedRoutesDashboardPr
             ? [{ id: "", number: route.short_name }]
             : [],
         },
+        "",   // direction unknown for saved routes
         stops,
         ""
       );

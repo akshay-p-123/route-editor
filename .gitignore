@@ -1,0 +1,4 @@
+.env
+supabase_schema.sql
+.claude
+docker-compose.yml

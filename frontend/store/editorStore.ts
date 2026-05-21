@@ -14,6 +14,7 @@ export type EditMode = "map" | "list";
 
 interface EditorState {
   selectedRouteGroup: RouteGroup | null;
+  selectedDirection: string | null;
   originalStops: EditorStop[];
   stops: EditorStop[];
   shapeId: string | null;
@@ -24,11 +25,20 @@ interface EditorState {
   isDirty: boolean;
   selectedStopId: string | null;
 
-  loadRoute: (group: RouteGroup, stops: EditorStop[], shapeId: string) => void;
+  loadRoute: (
+    group: RouteGroup,
+    direction: string,
+    stops: EditorStop[],
+    shapeId: string
+  ) => void;
   startCustomRoute: (meta: { name: string; shortName: string; color: string }) => void;
   setStops: (stops: EditorStop[]) => void;
   addStop: (stop: StopSearchResult, afterIndex?: number) => void;
   removeStop: (stopId: string) => void;
+  replaceStop: (
+    oldStopId: string,
+    replacement: { stopId: string; name: string; lat: number; lon: number }
+  ) => void;
   moveStop: (fromIndex: number, toIndex: number) => void;
   setEditMode: (mode: EditMode) => void;
   setSelectedStopId: (id: string | null) => void;
@@ -38,6 +48,7 @@ interface EditorState {
 
 const initial = {
   selectedRouteGroup: null,
+  selectedDirection: null,
   originalStops: [],
   stops: [],
   shapeId: null,
@@ -52,9 +63,10 @@ const initial = {
 export const useEditorStore = create<EditorState>((set, get) => ({
   ...initial,
 
-  loadRoute(group, stops, shapeId) {
+  loadRoute(group, direction, stops, shapeId) {
     set({
       selectedRouteGroup: group,
+      selectedDirection: direction,
       originalStops: stops,
       stops: stops.map((s) => ({ ...s })),
       shapeId,
@@ -68,6 +80,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   startCustomRoute(meta) {
     set({
       selectedRouteGroup: null,
+      selectedDirection: null,
       originalStops: [],
       stops: [],
       shapeId: null,
@@ -111,6 +124,23 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       .stops.filter((s) => s.stop_id !== stopId)
       .map((s, i) => ({ ...s, stop_sequence: i }));
     set({ stops: next, isDirty: true });
+  },
+
+  replaceStop(oldStopId, replacement) {
+    const stops = get().stops;
+    const idx = stops.findIndex((s) => s.stop_id === oldStopId);
+    if (idx === -1) return;
+    const origIds = new Set(get().originalStops.map((s) => s.stop_id));
+    const updated = [...stops];
+    updated[idx] = {
+      ...updated[idx],
+      stop_id: replacement.stopId,
+      stop_name: replacement.name,
+      stop_lat: replacement.lat,
+      stop_lon: replacement.lon,
+      isAdded: !origIds.has(replacement.stopId),
+    };
+    set({ stops: updated, isDirty: true });
   },
 
   moveStop(fromIndex, toIndex) {
