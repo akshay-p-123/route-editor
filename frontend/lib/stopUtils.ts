@@ -4,6 +4,12 @@ import type { EditorStop } from "@/store/editorStore";
 export type StopInfo = { name: string; lat: number; lon: number };
 export type StopMap = Map<string, StopInfo>;
 
+/** Strip the boarding-point suffix: "Green & Wright (NE Corner)" → "Green & Wright" */
+export function stopGroupName(name: string): string {
+  const idx = name.indexOf(" (");
+  return idx >= 0 ? name.substring(0, idx) : name;
+}
+
 /** Flatten stop groups + boarding points into a fast id → info lookup. */
 export function buildStopMap(stopGroups: StopGroup[]): StopMap {
   const map: StopMap = new Map();
@@ -49,14 +55,37 @@ export function nearestStop(
   return bestDist <= maxDistDeg ? best : null;
 }
 
+export interface OSRMResult {
+  coords: [number, number][];
+  /**
+   * True when the OSRM route is suspiciously long relative to the straight-line
+   * distance between stops — indicating OSRM had to detour wildly (impossible
+   * direct path, one-way streets, etc.). Callers should fall back to
+   * buildModifiedGeometry and warn the user.
+   *
+   * Threshold: osrmDist > 3× direct dist AND osrmDist > 2 km absolute.
+   */
+  suspicious: boolean;
+}
+
+/** Straight-line distance in metres between consecutive stops (Euclidean approx). */
+function directDistMeters(stops: Array<{ lat: number; lon: number }>): number {
+  let total = 0;
+  for (let i = 0; i < stops.length - 1; i++) {
+    const dlat = (stops[i + 1].lat - stops[i].lat) * 111_000;
+    const dlon = (stops[i + 1].lon - stops[i].lon) * 85_000; // cos(40°) × 111k
+    total += Math.sqrt(dlat ** 2 + dlon ** 2);
+  }
+  return total;
+}
+
 /**
  * Route through a list of stops using the public OSRM driving API.
- * Returns road-following [lon, lat] coordinates, or null on failure.
- * Falls back gracefully — callers should use buildModifiedGeometry as backup.
+ * Returns road-following coordinates plus a `suspicious` flag, or null on failure.
  */
 export async function routeWithOSRM(
   stops: Array<{ lat: number; lon: number }>
-): Promise<[number, number][] | null> {
+): Promise<OSRMResult | null> {
   if (stops.length < 2) return null;
   const coords = stops.map((s) => `${s.lon},${s.lat}`).join(";");
   try {
@@ -67,7 +96,16 @@ export async function routeWithOSRM(
     if (!resp.ok) return null;
     const data = await resp.json();
     if (data.code !== "Ok" || !data.routes?.[0]) return null;
-    return data.routes[0].geometry.coordinates as [number, number][];
+
+    const route = data.routes[0];
+    const osrmDist: number = route.distance ?? Infinity; // metres
+    const directDist = directDistMeters(stops);
+    const suspicious = osrmDist > 2000 && osrmDist > 3 * directDist;
+
+    return {
+      coords: route.geometry.coordinates as [number, number][],
+      suspicious,
+    };
   } catch {
     return null;
   }

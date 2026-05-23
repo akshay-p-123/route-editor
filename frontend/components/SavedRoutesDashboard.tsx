@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { savedRoutes, type SavedRoute } from "@/lib/api";
 import { useEditorStore } from "@/store/editorStore";
+import { validateRoute } from "@/lib/validation";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -19,7 +20,7 @@ export default function SavedRoutesDashboard({ onClose }: SavedRoutesDashboardPr
   const [routes, setRoutes] = useState<SavedRoute[]>([]);
   const [loading, setLoading] = useState(true);
   const [token, setToken] = useState<string | null>(null);
-  const { loadRoute, startCustomRoute, markSaved } = useEditorStore();
+  const { loadRoute, markSaved } = useEditorStore();
 
   useEffect(() => {
     (async () => {
@@ -53,12 +54,29 @@ export default function SavedRoutesDashboard({ onClose }: SavedRoutesDashboardPr
       }));
 
     if (route.is_custom) {
-      startCustomRoute({
-        name: route.name,
-        shortName: route.short_name ?? "",
-        color: route.color ?? "#009B77",
+      const errs = validateRoute(stops);
+      useEditorStore.setState({
+        selectedRouteGroup: null,
+        selectedDirection: null,
+        originalStops: stops,
+        stops,
+        shapeId: null,
+        isCustom: true,
+        customMeta: {
+          name: route.name,
+          shortName: route.short_name ?? "",
+          color: route.color ?? "#009B77",
+        },
+        savedRouteId: route.id,
+        activeRerouteId: route.reroute_id ?? null,
+        isDirty: false,
+        routePreviewEnabled: true,
+        isSuspiciousRoute: false,
+        isRouteComputing: false,
+        selectedStopId: null,
+        validationErrors: errs,
+        isValid: errs.filter((e) => e.severity === "error").length === 0,
       });
-      useEditorStore.setState({ stops, originalStops: stops, savedRouteId: route.id });
     } else {
       // Reconstruct a minimal RouteGroup from saved metadata
       loadRoute(
@@ -76,6 +94,7 @@ export default function SavedRoutesDashboard({ onClose }: SavedRoutesDashboardPr
         ""
       );
       markSaved(route.id);
+      useEditorStore.setState({ activeRerouteId: route.reroute_id ?? null });
     }
     onClose();
   }

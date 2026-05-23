@@ -12,7 +12,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useQuery } from "@tanstack/react-query";
 import { useEditorStore } from "@/store/editorStore";
 import { mtd, type ShapePoint } from "@/lib/api";
-import { buildStopMap, nearestStop, buildModifiedGeometry, routeWithOSRM } from "@/lib/stopUtils";
+import { buildStopMap, nearestStop, buildModifiedGeometry, routeWithOSRM, stopGroupName } from "@/lib/stopUtils";
 
 const INITIAL_VIEW = { longitude: -88.2272, latitude: 40.1164, zoom: 13 };
 
@@ -44,6 +44,8 @@ const modifiedLineLayer: LayerProps = {
     "line-color": ["get", "color"],
     "line-width": 4,
     "line-opacity": 0.95,
+    // Dashed when suspicious (property set via GeoJSON)
+    "line-dasharray": ["case", ["get", "suspicious"], ["literal", [4, 3]], ["literal", [1, 0]]],
   },
 };
 
@@ -56,6 +58,17 @@ const plainLineLayer: LayerProps = {
     "line-opacity": 0.9,
   },
 };
+
+// ── Direction arrow ───────────────────────────────────────────────────────────
+
+function DirectionArrow({ color }: { color: string }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" style={{ display: "block" }} className="pointer-events-none drop-shadow">
+      {/* Filled arrow pointing up, rotated by parent */}
+      <polygon points="11,2 19,18 11,13 3,18" fill={color} stroke="white" strokeWidth="2" strokeLinejoin="round" />
+    </svg>
+  );
+}
 
 // ── X marker SVG ─────────────────────────────────────────────────────────────
 
@@ -77,14 +90,19 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
     stops,
     originalStops,
     isDirty,
+    isCustom,
     selectedStopId,
     setSelectedStopId,
+    addStop,
     replaceStop,
+    routePreviewEnabled,
+    setSuspiciousRoute,
+    setRouteComputing,
   } = useEditorStore();
 
-  // Road-following coords for the modified route, computed via OSRM.
-  // Falls back to shape-segment approach if OSRM is unavailable.
   const [modifiedCoords, setModifiedCoords] = useState<[number, number][] | null>(null);
+  // Tracks the latest OSRM request so stale responses are discarded.
+  const requestIdRef = useRef(0);
 
   // Reuse the cached stops query (same key as RoutePicker — no extra fetch)
   const { data: stopsData } = useQuery({
@@ -100,22 +118,52 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
 
   // ── OSRM routing for modified line ──────────────────────────────────────────
   useEffect(() => {
-    if (!isDirty || stops.length < 2) {
+    if ((!isDirty && !isCustom) || stops.length < 2 || !routePreviewEnabled) {
       setModifiedCoords(null);
+      setSuspiciousRoute(false);
+      setRouteComputing(false);
       return;
     }
-    // Immediately show the shape-segment approximation so the old path
-    // disappears right away, then refine with OSRM after the debounce.
-    setModifiedCoords(buildModifiedGeometry(stops, shapePoints));
+
+    // Show loading indicator immediately when preview is enabled.
+    setRouteComputing(true);
+
+    // Claim this request slot. The async callback below only applies its result
+    // if the slot hasn't been taken by a newer edit (race condition fix).
+    const myId = ++requestIdRef.current;
 
     const timer = setTimeout(async () => {
       const waypoints = stops.map((s) => ({ lat: s.stop_lat, lon: s.stop_lon }));
-      const osrm = await routeWithOSRM(waypoints);
-      if (osrm) setModifiedCoords(osrm);
-      // If OSRM fails, keep the shape-segment version already showing
-    }, 400);
-    return () => clearTimeout(timer);
-  }, [isDirty, stops, shapePoints]);
+      const result = await routeWithOSRM(waypoints);
+
+      // Discard if a newer edit started while we were waiting
+      if (requestIdRef.current !== myId) return;
+
+      setRouteComputing(false);
+
+      if (result) {
+        if (result.suspicious) {
+          // OSRM returned an unreasonably long detour — use shape-segment fallback
+          setModifiedCoords(buildModifiedGeometry(stops, shapePoints));
+          setSuspiciousRoute(true);
+        } else {
+          setModifiedCoords(result.coords);
+          setSuspiciousRoute(false);
+        }
+      } else {
+        // OSRM unavailable — fall back to shape-segment approach
+        setModifiedCoords(buildModifiedGeometry(stops, shapePoints));
+        setSuspiciousRoute(false);
+      }
+    }, 800);
+
+    return () => {
+      clearTimeout(timer);
+      // If the effect is cleaned up before OSRM responds (e.g. rapid edits),
+      // clear the computing indicator so it doesn't get stuck.
+      setRouteComputing(false);
+    };
+  }, [isDirty, isCustom, stops, shapePoints, routePreviewEnabled, setSuspiciousRoute, setRouteComputing]);
 
   // ── Diff sets ───────────────────────────────────────────────────────────────
   const origIdSet = useMemo(
@@ -130,7 +178,7 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
   // ── Nearby stop suggestions ─────────────────────────────────────────────────
   // When a stop is selected, surface nearby MTD stops as replacement candidates.
   // ~500 m radius (0.000025 squared degrees). Excludes stops already in the route.
-  const NEARBY_DIST = 0.0004; // ~2 km radius
+  const NEARBY_DIST = 0.0016; // ~4 km radius
 
   const selectedStop = useMemo(
     () => stops.find((s) => s.stop_id === selectedStopId) ?? null,
@@ -139,9 +187,12 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
 
   const nearbyStops = useMemo(() => {
     if (!selectedStop?.stop_id) return [];
+    const selectedGroup = stopGroupName(selectedStop.stop_name);
     const results: Array<{ id: string; name: string; lat: number; lon: number }> = [];
     for (const [id, info] of stopMap) {
       if (currIdSet.has(id)) continue; // already in route
+      if (!info.name.includes(" (")) continue; // skip group-level entries with no direction
+      if (stopGroupName(info.name) === selectedGroup) continue; // same intersection
       const d =
         (info.lat - selectedStop.stop_lat) ** 2 +
         (info.lon - selectedStop.stop_lon) ** 2;
@@ -149,7 +200,6 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
         results.push({ id, ...info });
       }
     }
-    // Sort closest first
     results.sort((a, b) => {
       const da =
         (a.lat - selectedStop.stop_lat) ** 2 +
@@ -159,7 +209,7 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
         (b.lon - selectedStop.stop_lon) ** 2;
       return da - db;
     });
-    return results.slice(0, 20); // cap at 20 suggestions
+    return results.slice(0, 30);
   }, [selectedStop, stopMap, currIdSet]);
 
   // Original stops that are no longer in the current route → gray X
@@ -167,6 +217,22 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
     () => (isDirty ? originalStops.filter((s) => s.stop_id && !currIdSet.has(s.stop_id)) : []),
     [isDirty, originalStops, currIdSet]
   );
+
+  // ── Direction arrow ─────────────────────────────────────────────────────────
+  // Placed 25% along the first segment so it sits visually next to stop 0.
+  const directionArrow = useMemo(() => {
+    if (stops.length < 2) return null;
+    const from = stops[0];
+    const to = stops[1];
+    const dLat = to.stop_lat - from.stop_lat;
+    const dLon = (to.stop_lon - from.stop_lon) * Math.cos((from.stop_lat * Math.PI) / 180);
+    const bearingDeg = Math.atan2(dLon, dLat) * (180 / Math.PI);
+    return {
+      lat: from.stop_lat + 0.25 * (to.stop_lat - from.stop_lat),
+      lon: from.stop_lon + 0.25 * (to.stop_lon - from.stop_lon),
+      bearingDeg,
+    };
+  }, [stops]);
 
   // ── GeoJSON ─────────────────────────────────────────────────────────────────
 
@@ -187,19 +253,22 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
   }), [isDirty, shapePoints]);
 
   // Modified route — OSRM road-following coords (or shape-segment fallback).
+  // When suspicious, rendered in amber to signal the path may be inaccurate.
+  const { isSuspiciousRoute } = useEditorStore();
   const modifiedLineGeoJSON = useMemo(() => {
-    const coords = isDirty && modifiedCoords && modifiedCoords.length > 1
+    const coords = (isDirty || isCustom) && routePreviewEnabled && modifiedCoords && modifiedCoords.length > 1
       ? modifiedCoords
       : [];
+    const lineColor = isSuspiciousRoute ? "#f59e0b" : `#${routeColor}`;
     return {
       type: "FeatureCollection" as const,
       features: coords.length > 1 ? [{
         type: "Feature" as const,
         geometry: { type: "LineString" as const, coordinates: coords },
-        properties: { color: `#${routeColor}` },
+        properties: { color: lineColor, suspicious: isSuspiciousRoute },
       }] : [],
     };
-  }, [isDirty, modifiedCoords, routeColor]);
+  }, [isDirty, isCustom, routePreviewEnabled, modifiedCoords, routeColor, isSuspiciousRoute]);
 
   // Plain route (no edits) — original shape in route color
   const plainLineGeoJSON = useMemo(() => ({
@@ -220,6 +289,7 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
   // ── Fit bounds ──────────────────────────────────────────────────────────────
   useEffect(() => {
     if (!mapRef.current || stops.length === 0) return;
+    if (isDirty) return; // Don't re-fit while the user is actively editing
     const lons = stops.map((s) => s.stop_lon);
     const lats = stops.map((s) => s.stop_lat);
     mapRef.current.fitBounds(
@@ -239,16 +309,22 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
 
   const handleNearbyClick = useCallback(
     (nearby: { id: string; name: string; lat: number; lon: number }) => {
-      if (!selectedStopId) return;
-      replaceStop(selectedStopId, {
-        stopId: nearby.id,
-        name: nearby.name,
-        lat: nearby.lat,
-        lon: nearby.lon,
-      });
-      setSelectedStopId(null);
+      if (isCustom) {
+        // Building mode: insert a new stop after the currently selected one
+        const idx = stops.findIndex((s) => s.stop_id === selectedStopId);
+        addStop(
+          { stopId: nearby.id, name: nearby.name, subName: null, type: 0,
+            location: { latitude: nearby.lat, longitude: nearby.lon } },
+          idx >= 0 ? idx : undefined
+        );
+      } else {
+        // Editing mode: replace the selected stop with the nearby one
+        if (!selectedStopId) return;
+        replaceStop(selectedStopId, { stopId: nearby.id, name: nearby.name, lat: nearby.lat, lon: nearby.lon });
+        setSelectedStopId(null);
+      }
     },
-    [selectedStopId, replaceStop, setSelectedStopId]
+    [isCustom, selectedStopId, stops, addStop, replaceStop, setSelectedStopId]
   );
 
   const handleDragEnd = useCallback(
@@ -288,6 +364,15 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
         <Layer {...plainLineLayer} />
       </Source>
 
+      {/* Direction arrow — 25% along the first segment */}
+      {directionArrow && (
+        <Marker longitude={directionArrow.lon} latitude={directionArrow.lat} anchor="center">
+          <div style={{ transform: `rotate(${directionArrow.bearingDeg}deg)` }}>
+            <DirectionArrow color={`#${routeColor}`} />
+          </div>
+        </Marker>
+      )}
+
       {/* Nearby stop suggestions — shown when a stop is selected */}
       {nearbyStops.map((nearby) => (
         <Marker
@@ -301,18 +386,29 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
             title={nearby.name}
             className="group relative flex items-center justify-center focus:outline-none"
           >
-            {/* Diamond shape */}
+            {/* Pulse ring — building mode only */}
+            {isCustom && (
+              <span
+                className="absolute animate-ping rounded-full opacity-30"
+                style={{ width: 24, height: 24, backgroundColor: "#f59e0b" }}
+              />
+            )}
+            {/* Diamond */}
             <span
-              className="block rotate-45 border-2 border-white shadow-md transition-transform group-hover:scale-125"
+              className="relative block rotate-45 border-2 border-white transition-transform group-hover:scale-125"
               style={{
-                width: 12,
-                height: 12,
-                backgroundColor: "#f59e0b",
-                boxShadow: "0 1px 4px rgba(0,0,0,0.35)",
+                width: 16,
+                height: 16,
+                backgroundColor: isCustom ? "#f59e0b" : "#6366f1",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
               }}
             />
+            {/* Mode indicator: + for building, → for editing */}
+            <span className="pointer-events-none absolute text-white font-bold leading-none select-none" style={{ fontSize: 10 }}>
+              {isCustom ? "+" : "→"}
+            </span>
             {/* Tooltip */}
-            <span className="pointer-events-none absolute bottom-full mb-2 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-0.5 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="pointer-events-none absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-0.5 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
               {nearby.name}
             </span>
           </button>

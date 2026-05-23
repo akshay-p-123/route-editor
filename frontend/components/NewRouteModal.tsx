@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Palette } from "lucide-react";
 
 const PRESET_COLORS = [
   "#009B77", "#E63946", "#457B9D", "#F4A261",
@@ -51,7 +52,7 @@ export default function NewRouteModal({ onClose }: NewRouteModalProps) {
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="route-short">Route number / short name</Label>
+              <Label htmlFor="route-short">Number</Label>
               <Input
                 id="route-short"
                 placeholder="e.g. 22X"
@@ -76,13 +77,28 @@ export default function NewRouteModal({ onClose }: NewRouteModalProps) {
                     aria-label={c}
                   />
                 ))}
-                <input
-                  type="color"
-                  value={color}
-                  onChange={(e) => setColor(e.target.value)}
-                  className="w-7 h-7 rounded-full border cursor-pointer"
-                  title="Custom color"
-                />
+                <div className="relative w-7 h-7" title="Custom color">
+                  <label
+                    htmlFor="custom-color"
+                    className="flex w-7 h-7 cursor-pointer items-center justify-center rounded-full border-2 border-dashed transition-all hover:scale-110"
+                    style={
+                      PRESET_COLORS.includes(color)
+                        ? { borderColor: "#9ca3af" }
+                        : { borderColor: "#000", backgroundColor: color, transform: "scale(1.2)" }
+                    }
+                  >
+                    {PRESET_COLORS.includes(color) && (
+                      <Palette className="w-3 h-3 text-muted-foreground" />
+                    )}
+                  </label>
+                  <input
+                    id="custom-color"
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+                  />
+                </div>
               </div>
             </div>
             <div className="flex gap-2 pt-1">

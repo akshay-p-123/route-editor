@@ -45,10 +45,10 @@ export default function StopSearch() {
 
   return (
     <div className="relative">
-      <div className="relative">
-        <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground pointer-events-none" />
+      <div className="relative rounded-md shadow-md ring-2 ring-primary/20 focus-within:ring-primary/50 transition-shadow">
+        <Search className="absolute left-2.5 top-3 h-4 w-4 text-muted-foreground pointer-events-none" />
         <Input
-          className="pl-8 h-9 text-sm"
+          className="pl-8 h-10 text-sm font-medium border-0 shadow-none focus-visible:ring-0"
           placeholder="Add a stop…"
           value={query}
           onChange={(e) => {

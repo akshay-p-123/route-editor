@@ -39,6 +39,7 @@ class RouteIn(BaseModel):
     color: str | None = None
     is_custom: bool = False
     base_route_id: str | None = None
+    reroute_id: str | None = None
     stops: list[StopIn]
 
 
@@ -70,6 +71,7 @@ async def create_route(body: RouteIn, user_id: str = Depends(_user_id)):
                 "color": body.color,
                 "is_custom": body.is_custom,
                 "base_route_id": body.base_route_id,
+                "reroute_id": body.reroute_id,
             }
         )
         .execute()
@@ -109,6 +111,7 @@ async def update_route(route_id: UUID, body: RouteIn, user_id: str = Depends(_us
             "color": body.color,
             "is_custom": body.is_custom,
             "base_route_id": body.base_route_id,
+            "reroute_id": body.reroute_id,
         }
     ).eq("id", str(route_id)).eq("user_id", user_id).execute()
 

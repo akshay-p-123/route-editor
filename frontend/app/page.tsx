@@ -11,8 +11,9 @@ import EditorToolbar from "@/components/EditorToolbar";
 import AuthModal from "@/components/AuthModal";
 import NewRouteModal from "@/components/NewRouteModal";
 import SavedRoutesDashboard from "@/components/SavedRoutesDashboard";
+import RerouteDashboard from "@/components/RerouteDashboard";
 import { Button } from "@/components/ui/button";
-import { LogIn, LogOut, FolderOpen } from "lucide-react";
+import { LogIn, LogOut, FolderOpen, MapPin } from "lucide-react";
 import type { User } from "@supabase/supabase-js";
 import type { ShapePoint } from "@/lib/api";
 
@@ -31,6 +32,7 @@ export default function EditorPage() {
   const [showAuth, setShowAuth] = useState(false);
   const [showNewRoute, setShowNewRoute] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
+  const [showReroutes, setShowReroutes] = useState(false);
   const [shapePoints, setShapePoints] = useState<ShapePoint[]>([]);
 
   const { selectedRouteGroup, shapeId, isCustom, customMeta } = useEditorStore();
@@ -45,6 +47,18 @@ export default function EditorPage() {
       setUser(session?.user ?? null);
     });
     return () => subscription.unsubscribe();
+  }, []);
+
+  // Ctrl+Z / Cmd+Z — undo
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key === "z") {
+        e.preventDefault();
+        useEditorStore.getState().undo();
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
   }, []);
 
   // Load shape whenever shapeId changes
@@ -78,14 +92,24 @@ export default function EditorPage() {
         <span className="font-bold text-sm tracking-tight">MTD Route Editor</span>
         <div className="ml-auto flex items-center gap-2">
           {user && (
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={() => setShowDashboard(true)}
-            >
-              <FolderOpen className="w-4 h-4 mr-1.5" />
-              My Routes
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowReroutes(true)}
+              >
+                <MapPin className="w-4 h-4 mr-1.5" />
+                Reroutes
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setShowDashboard(true)}
+              >
+                <FolderOpen className="w-4 h-4 mr-1.5" />
+                My Routes
+              </Button>
+            </>
           )}
           {user ? (
             <Button size="sm" variant="ghost" onClick={handleLogout}>
@@ -140,6 +164,9 @@ export default function EditorPage() {
       {showNewRoute && <NewRouteModal onClose={() => setShowNewRoute(false)} />}
       {showDashboard && (
         <SavedRoutesDashboard onClose={() => setShowDashboard(false)} />
+      )}
+      {showReroutes && (
+        <RerouteDashboard onClose={() => setShowReroutes(false)} />
       )}
     </div>
   );

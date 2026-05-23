@@ -9,6 +9,7 @@
  */
 
 const BASE = "";
+const DEFAULT_TIMEOUT_MS = 15_000;
 
 async function fetchJSON<T>(
   path: string,
@@ -21,12 +22,55 @@ async function fetchJSON<T>(
   };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}${path}`, {
+      ...options,
+      headers,
+      signal: options?.signal ?? controller.signal,
+    });
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") {
+      throw new Error(`Request timed out after ${DEFAULT_TIMEOUT_MS / 1000}s: ${path}`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+
   if (!res.ok) {
     const body = await res.text().catch(() => "");
-    throw new Error(`${res.status} ${res.statusText}: ${body}`);
+    // Try to extract a structured message from the FastAPI error body
+    try {
+      const parsed = JSON.parse(body);
+      const detail = parsed?.detail ?? parsed?.message;
+      if (detail) throw new Error(`${res.status}: ${detail}`);
+    } catch {
+      // not JSON — fall through
+    }
+    throw new Error(`${res.status} ${res.statusText}${body ? `: ${body}` : ""}`);
   }
-  return res.json() as Promise<T>;
+
+  const data = (await res.json()) as T;
+
+  // Validate the MTD ApiResponse envelope: if result is null but error is set, throw
+  const envelope = data as unknown as Record<string, unknown>;
+  if (
+    envelope !== null &&
+    typeof envelope === "object" &&
+    "result" in envelope &&
+    envelope["result"] === null &&
+    "error" in envelope &&
+    envelope["error"]
+  ) {
+    const err = envelope["error"] as { message?: string; code?: string };
+    throw new Error(err?.message ?? err?.code ?? "MTD API error");
+  }
+
+  return data;
 }
 
 // ── MTD proxy ─────────────────────────────────────────────────────────────────
@@ -95,6 +139,42 @@ export const savedRoutes = {
     ),
   delete: (id: string, token: string) =>
     fetch(`${BASE}/api/routes/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+};
+
+// ── Reroutes ─────────────────────────────────────────────────────────────────
+
+export const reroutes = {
+  list: (token: string) =>
+    fetchJSON<Reroute[]>("/api/reroutes", undefined, token),
+  get: (id: string, token: string) =>
+    fetchJSON<Reroute>(`/api/reroutes/${id}`, undefined, token),
+  create: (body: { name: string; description?: string; start_date?: string; end_date?: string }, token: string) =>
+    fetchJSON<Reroute>(
+      "/api/reroutes",
+      { method: "POST", body: JSON.stringify(body) },
+      token
+    ),
+  update: (id: string, body: { name?: string; description?: string; start_date?: string; end_date?: string }, token: string) =>
+    fetchJSON<Reroute>(
+      `/api/reroutes/${id}`,
+      { method: "PUT", body: JSON.stringify(body) },
+      token
+    ),
+  delete: (id: string, token: string) =>
+    fetch(`${BASE}/api/reroutes/${id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  addRoute: (id: string, routeId: string, token: string) =>
+    fetch(`${BASE}/api/reroutes/${id}/routes/${routeId}`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    }),
+  removeRoute: (id: string, routeId: string, token: string) =>
+    fetch(`${BASE}/api/reroutes/${id}/routes/${routeId}`, {
       method: "DELETE",
       headers: { Authorization: `Bearer ${token}` },
     }),
@@ -263,6 +343,7 @@ export interface SavedRoute {
   color: string | null;
   is_custom: boolean;
   base_route_id: string | null;
+  reroute_id: string | null;
   created_at: string;
   updated_at: string;
   route_stops: RouteStop[];
@@ -274,7 +355,20 @@ export interface RoutePayload {
   color?: string;
   is_custom: boolean;
   base_route_id?: string;
+  reroute_id?: string;
   stops: Omit<RouteStop, "id" | "route_id">[];
+}
+
+export interface Reroute {
+  id: string;
+  user_id: string;
+  name: string;
+  description?: string;
+  start_date?: string;
+  end_date?: string;
+  created_at: string;
+  updated_at: string;
+  saved_routes?: SavedRoute[];
 }
 
 export interface ExportStopPoint {

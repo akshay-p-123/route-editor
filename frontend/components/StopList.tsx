@@ -17,10 +17,11 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useEditorStore, type EditorStop } from "@/store/editorStore";
-import { mtd, type StopSearchResult } from "@/lib/api";
+import { mtd, type StopSearchResult } from "@/lib/api"; // mtd used in StopReplaceDropdown
+import type { ValidationError } from "@/lib/validation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { GripVertical, X, MapPin, Pencil } from "lucide-react";
+import { GripVertical, X, MapPin, Pencil, AlertTriangle, CheckCheck } from "lucide-react";
 import StopSearch from "@/components/StopSearch";
 
 // ── Inline stop replacement ───────────────────────────────────────────────────
@@ -103,6 +104,7 @@ function SortableStop({
   isEditing,
   onStartEdit,
   onEndEdit,
+  stopIssues,
 }: {
   stop: EditorStop;
   index: number;
@@ -110,8 +112,9 @@ function SortableStop({
   isEditing: boolean;
   onStartEdit: () => void;
   onEndEdit: () => void;
+  stopIssues: ValidationError[];
 }) {
-  const { removeStop, replaceStop, setSelectedStopId, selectedStopId, originalStops } =
+  const { removeStop, replaceStop, setSelectedStopId, selectedStopId, originalStops, dismissWarning } =
     useEditorStore();
   const id = stop.stop_id ?? `custom-${index}`;
   const {
@@ -133,6 +136,9 @@ function SortableStop({
   const origIds = new Set(originalStops.map((s) => s.stop_id));
   const isAdded = stop.isAdded || (!!stop.stop_id && !origIds.has(stop.stop_id));
   const dotColor = isAdded ? "#22c55e" : `#${routeColor || "009B77"}`;
+  const hasError   = stopIssues.some((e) => e.severity === "error");
+  const hasWarning = !hasError && stopIssues.some((e) => e.severity === "warning");
+  const firstIssue = stopIssues[0];
 
   function handleReplace(result: StopSearchResult) {
     if (!stop.stop_id) return;
@@ -149,8 +155,14 @@ function SortableStop({
     <li
       ref={setNodeRef}
       style={style}
-      className={`flex items-center gap-2 px-3 py-2 rounded-md group ${
-        isSelected && !isEditing ? "bg-accent" : "hover:bg-accent/50"
+      className={`flex items-center gap-2 px-3 py-2 rounded-md group border-l-2 ${
+        hasError
+          ? "border-l-destructive"
+          : hasWarning
+          ? "border-l-amber-400"
+          : isSelected && !isEditing
+          ? "bg-accent border-l-transparent"
+          : "hover:bg-accent/50 border-l-transparent"
       }`}
     >
       {/* Drag handle — hidden while editing */}
@@ -176,11 +188,29 @@ function SortableStop({
         <StopReplaceDropdown onSelect={handleReplace} onClose={onEndEdit} />
       ) : (
         <button
-          className="flex-1 text-sm text-left leading-tight truncate"
+          className="flex-1 text-sm text-left leading-tight truncate min-w-0"
           onClick={() => setSelectedStopId(isSelected ? null : id)}
-          title={stop.stop_name}
+          title={firstIssue ? firstIssue.message : stop.stop_name}
         >
+          {hasError && (
+            <AlertTriangle className="inline w-3 h-3 text-destructive mr-1 shrink-0" />
+          )}
+          {hasWarning && (
+            <AlertTriangle className="inline w-3 h-3 text-amber-500 mr-1 shrink-0" />
+          )}
           {stop.stop_name}
+        </button>
+      )}
+
+      {/* Dismiss warning button — only for WRONG_SIDE warnings on stops with an ID */}
+      {!isEditing && hasWarning && stop.stop_id && stopIssues.some((e) => e.code === "WRONG_SIDE") && (
+        <button
+          onClick={() => dismissWarning(stop.stop_id!, "WRONG_SIDE")}
+          className="shrink-0 opacity-0 group-hover:opacity-100 transition-opacity text-amber-500 hover:text-amber-700"
+          aria-label="Dismiss wrong-side warning"
+          title="Dismiss — I know this stop is on the wrong side"
+        >
+          <CheckCheck className="w-3.5 h-3.5" />
         </button>
       )}
 
@@ -220,7 +250,7 @@ function SortableStop({
 // ── Stop list ─────────────────────────────────────────────────────────────────
 
 export default function StopList() {
-  const { stops, setStops, selectedRouteGroup, isCustom, customMeta } =
+  const { stops, setStops, selectedRouteGroup, customMeta, validationErrors } =
     useEditorStore();
   const [editingStopId, setEditingStopId] = useState<string | null>(null);
 
@@ -273,6 +303,9 @@ export default function StopList() {
             <ul className="py-1">
               {stops.map((stop, index) => {
                 const id = stop.stop_id ?? `custom-${index}`;
+                const stopIssues = validationErrors.filter(
+                  (e) => e.stopId === stop.stop_id
+                );
                 return (
                   <SortableStop
                     key={id}
@@ -282,6 +315,7 @@ export default function StopList() {
                     isEditing={editingStopId === id}
                     onStartEdit={() => setEditingStopId(id)}
                     onEndEdit={() => setEditingStopId(null)}
+                    stopIssues={stopIssues}
                   />
                 );
               })}
