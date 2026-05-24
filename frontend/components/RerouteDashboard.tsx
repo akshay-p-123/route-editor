@@ -11,7 +11,7 @@ import { buildStopMap } from "@/lib/stopUtils";
 import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, Loader2, LogIn } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, Loader2, LogIn, Pencil } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
 
 interface RerouteDashboardProps {
@@ -27,6 +27,8 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
   const [authLoaded, setAuthLoaded] = useState(false);
 
   const [exportingRerouteId, setExportingRerouteId] = useState<string | null>(null);
+  const [editingRerouteId, setEditingRerouteId] = useState<string | null>(null);
+  const [editingName, setEditingName] = useState("");
 
   // Route picker state (for "Edit a route in this reroute")
   const [pickGroup, setPickGroup] = useState<RouteGroup | null>(null);
@@ -244,6 +246,14 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     }
   }
 
+  async function commitRename(reroute: Reroute) {
+    const newName = editingName.trim();
+    setEditingRerouteId(null);
+    if (!newName || newName === reroute.name || !token) return;
+    await reroutes.update(reroute.id, { name: newName }, token);
+    queryClient.invalidateQueries({ queryKey: ["reroutes"] });
+  }
+
   const routesInReroutes = new Set(
     rerouteList.flatMap((r) => r.saved_routes?.map((sr) => sr.id) || [])
   );
@@ -312,7 +322,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                   </Button>
                 </div>
               </div>
-            ) : isLoading ? (
+            ) : !authLoaded || isLoading ? (
               <p className="text-sm text-muted-foreground">Loading reroutes…</p>
             ) : rerouteList.length === 0 ? (
               <p className="text-sm text-muted-foreground">No reroutes yet</p>
@@ -320,7 +330,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
               rerouteList.map((reroute) => (
                 <div
                   key={reroute.id}
-                  className="border rounded-lg p-4 bg-card"
+                  className="border rounded-lg p-4 bg-card group/card"
                 >
                   <div className="flex items-center gap-3">
                     <button
@@ -338,8 +348,22 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                       )}
                     </button>
 
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{reroute.name}</h3>
+                    <div className="flex-1 min-w-0">
+                      {editingRerouteId === reroute.id ? (
+                        <input
+                          className="w-full font-semibold bg-transparent outline-none border-b border-primary text-sm"
+                          value={editingName}
+                          onChange={(e) => setEditingName(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") void commitRename(reroute);
+                            if (e.key === "Escape") setEditingRerouteId(null);
+                          }}
+                          onBlur={() => void commitRename(reroute)}
+                          autoFocus
+                        />
+                      ) : (
+                        <h3 className="font-semibold truncate">{reroute.name}</h3>
+                      )}
                       {reroute.description && (
                         <p className="text-xs text-muted-foreground">
                           {reroute.description}
@@ -353,6 +377,17 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                         </p>
                       )}
                     </div>
+
+                    <button
+                      onClick={() => {
+                        setEditingRerouteId(reroute.id);
+                        setEditingName(reroute.name);
+                      }}
+                      className="opacity-0 group-hover/card:opacity-100 transition-opacity text-muted-foreground hover:text-foreground shrink-0"
+                      title="Rename"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
 
                     <button
                       onClick={() => void handleExportAll(reroute)}
