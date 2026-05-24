@@ -3,11 +3,11 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditorStore } from "@/store/editorStore";
-import { savedRoutes, exportPng, type RoutePayload, type ExportPayload } from "@/lib/api";
+import { savedRoutes, exportPng, type RoutePayload, type ExportPayload, type Reroute } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw } from "lucide-react";
+import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw, Copy, Pencil } from "lucide-react";
 
 interface EditorToolbarProps {
   onAuthRequired: () => void;
@@ -40,6 +40,12 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [showCopyDialog, setShowCopyDialog] = useState(false);
+  const [copyName, setCopyName] = useState("");
+  const [showSaveNameDialog, setShowSaveNameDialog] = useState(false);
+  const [saveName, setSaveName] = useState("");
+  const [showRenameDialog, setShowRenameDialog] = useState(false);
+  const [renameName, setRenameName] = useState("");
   const queryClient = useQueryClient();
 
   const hasRoute = !!selectedRouteGroup || isCustom;
@@ -53,7 +59,71 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
     return session?.access_token ?? null;
   }
 
-  async function handleSave() {
+  function handleSave() {
+    if (!savedRouteId) {
+      // First save — prompt for a name before creating
+      const routePart = [selectedRouteGroup?.routeGroupName, selectedDirection].filter(Boolean).join(" ") || "Untitled Route";
+      const rerouteName = activeRerouteId
+        ? (queryClient.getQueryData<Reroute[]>(["reroutes"]) ?? []).find((r) => r.id === activeRerouteId)?.name
+        : undefined;
+      const currentName = isCustom
+        ? (customMeta?.name ?? "Untitled Route")
+        : rerouteName ? `${rerouteName} -- ${routePart}` : routePart;
+      setSaveName(currentName);
+      setShowSaveNameDialog(true);
+    } else {
+      void doSave(savedRouteId, null);
+    }
+  }
+
+  async function confirmSaveName() {
+    setShowSaveNameDialog(false);
+    void doSave(null, saveName.trim() || null);
+  }
+
+  async function confirmRename() {
+    setShowRenameDialog(false);
+    const newName = renameName.trim();
+    if (!newName || !savedRouteId) return;
+    const token = await getToken();
+    if (!token) { onAuthRequired(); return; }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const current = await savedRoutes.get(savedRouteId, token);
+      const payload: RoutePayload = {
+        name: newName,
+        short_name: current.short_name ?? undefined,
+        color: current.color ?? undefined,
+        is_custom: current.is_custom,
+        base_route_id: current.base_route_id ?? undefined,
+        reroute_id: current.reroute_id ?? undefined,
+        stops: current.route_stops.map((s) => ({
+          stop_sequence: s.stop_sequence,
+          stop_id: s.stop_id ?? null,
+          stop_name: s.stop_name,
+          stop_lat: s.stop_lat,
+          stop_lon: s.stop_lon,
+        })),
+      };
+      await savedRoutes.update(savedRouteId, payload, token);
+      if (isCustom && customMeta) {
+        useEditorStore.setState({ customMeta: { ...customMeta, name: newName } });
+      } else if (selectedRouteGroup) {
+        useEditorStore.setState({ selectedRouteGroup: { ...selectedRouteGroup, routeGroupName: newName } });
+      }
+      queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+      if (activeRerouteId) {
+        queryClient.invalidateQueries({ queryKey: ["reroutes"] });
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Rename failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function doSave(existingId: string | null, nameOverride: string | null) {
     const token = await getToken();
     if (!token) { onAuthRequired(); return; }
     setSaving(true);
@@ -62,7 +132,7 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
       const shortName =
         selectedRouteGroup?.routes?.[0]?.number ?? customMeta?.shortName ?? "";
       const payload: RoutePayload = {
-        name: selectedRouteGroup?.routeGroupName ?? customMeta?.name ?? "Untitled Route",
+        name: nameOverride ?? selectedRouteGroup?.routeGroupName ?? customMeta?.name ?? "Untitled Route",
         short_name: shortName,
         color: `#${color}`,
         is_custom: isCustom,
@@ -77,14 +147,58 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         })),
       };
       let id: string;
-      if (savedRouteId) {
-        const res = await savedRoutes.update(savedRouteId, payload, token);
+      if (existingId) {
+        const res = await savedRoutes.update(existingId, payload, token);
         id = res.id;
       } else {
         const res = await savedRoutes.create(payload, token);
         id = res.id;
       }
       markSaved(id);
+      queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+      if (activeRerouteId) {
+        queryClient.invalidateQueries({ queryKey: ["reroutes"] });
+      }
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Save failed");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleSaveAsCopy() {
+    const currentName = isCustom
+      ? (customMeta?.name ?? "Untitled Route")
+      : (selectedRouteGroup?.routeGroupName ?? "Untitled Route");
+    setCopyName(currentName + " (copy)");
+    setShowCopyDialog(true);
+  }
+
+  async function confirmSaveAsCopy() {
+    setShowCopyDialog(false);
+    const token = await getToken();
+    if (!token) { onAuthRequired(); return; }
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const shortName = selectedRouteGroup?.routes?.[0]?.number ?? customMeta?.shortName ?? "";
+      const payload: RoutePayload = {
+        name: copyName,
+        short_name: shortName,
+        color: `#${color}`,
+        is_custom: isCustom,
+        base_route_id: selectedRouteGroup?.id,
+        reroute_id: activeRerouteId ?? undefined,
+        stops: stops.map((s) => ({
+          stop_sequence: s.stop_sequence,
+          stop_id: s.stop_id ?? null,
+          stop_name: s.stop_name,
+          stop_lat: s.stop_lat,
+          stop_lon: s.stop_lon,
+        })),
+      };
+      const res = await savedRoutes.create(payload, token);
+      markSaved(res.id);
       queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
       if (activeRerouteId) {
         queryClient.invalidateQueries({ queryKey: ["reroutes"] });
@@ -154,6 +268,16 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         </Badge>
 
         <span className="font-medium text-sm truncate max-w-[180px]">{routeLabel}</span>
+
+        {savedRouteId && (
+          <button
+            onClick={() => { setRenameName(routeLabel); setShowRenameDialog(true); }}
+            className="text-muted-foreground hover:text-foreground shrink-0"
+            title="Rename route"
+          >
+            <Pencil className="w-3 h-3" />
+          </button>
+        )}
 
         {selectedDirection && (
           <span className="text-xs text-muted-foreground shrink-0">{selectedDirection}</span>
@@ -272,6 +396,19 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
             <Save className="w-3.5 h-3.5 mr-1" />
             {saving ? "Saving…" : "Save"}
           </Button>
+
+          {savedRouteId && (
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={handleSaveAsCopy}
+              disabled={saving || !isValid}
+              title="Save current state as a new route"
+            >
+              <Copy className="w-3.5 h-3.5 mr-1" />
+              Copy
+            </Button>
+          )}
         </div>
       </div>
 
@@ -294,6 +431,65 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
             {firstWarning?.message}
             {warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ""}
           </span>
+        </div>
+      )}
+
+      {showSaveNameDialog && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+          <div className="bg-background rounded-lg shadow-xl p-6 w-80 space-y-4">
+            <h3 className="font-semibold">Name this route edit</h3>
+            <input
+              className="w-full border rounded px-3 py-2 text-sm"
+              value={saveName}
+              onChange={(e) => setSaveName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && saveName.trim() && confirmSaveName()}
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => setShowSaveNameDialog(false)}>Cancel</Button>
+              <Button size="sm" onClick={confirmSaveName} disabled={!saveName.trim()}>Save</Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRenameDialog && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+          <div className="bg-background rounded-lg shadow-xl p-6 w-80 space-y-4">
+            <h3 className="font-semibold">Rename route</h3>
+            <input
+              className="w-full border rounded px-3 py-2 text-sm"
+              value={renameName}
+              onChange={(e) => setRenameName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && renameName.trim() && confirmRename()}
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => setShowRenameDialog(false)}>Cancel</Button>
+              <Button size="sm" onClick={confirmRename} disabled={!renameName.trim() || saving}>
+                {saving ? "Saving…" : "Rename"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showCopyDialog && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
+          <div className="bg-background rounded-lg shadow-xl p-6 w-80 space-y-4">
+            <h3 className="font-semibold">Save as Copy</h3>
+            <input
+              className="w-full border rounded px-3 py-2 text-sm"
+              value={copyName}
+              onChange={(e) => setCopyName(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && copyName.trim() && confirmSaveAsCopy()}
+              autoFocus
+            />
+            <div className="flex gap-2 justify-end">
+              <Button size="sm" variant="outline" onClick={() => setShowCopyDialog(false)}>Cancel</Button>
+              <Button size="sm" onClick={confirmSaveAsCopy} disabled={!copyName.trim()}>Save</Button>
+            </div>
+          </div>
         </div>
       )}
     </div>

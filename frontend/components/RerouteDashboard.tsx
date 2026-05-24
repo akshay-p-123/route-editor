@@ -1,13 +1,17 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { reroutes, savedRoutes as savedRoutesApi, type Reroute, type SavedRoute } from "@/lib/api";
+import { reroutes, savedRoutes as savedRoutesApi, mtd, exportPng, type Reroute, type RouteGroup, type ExportPayload } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 import { useEditorStore } from "@/store/editorStore";
+import type { EditorStop } from "@/store/editorStore";
+import { validateRoute } from "@/lib/validation";
+import { buildStopMap } from "@/lib/stopUtils";
+import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, ChevronDown, ChevronRight, Trash2, Edit2, Plus } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, Loader2 } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
 
 interface RerouteDashboardProps {
@@ -18,12 +22,24 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
   const [showNewReroute, setShowNewReroute] = useState(false);
   const [expandedRerouteId, setExpandedRerouteId] = useState<string | null>(null);
   const queryClient = useQueryClient();
-  const { setActiveRerouteId } = useEditorStore();
 
   const [token, setToken] = useState<string | null>(null);
 
+  const [exportingRerouteId, setExportingRerouteId] = useState<string | null>(null);
+
+  // Route picker state (for "Edit a route in this reroute")
+  const [pickGroup, setPickGroup] = useState<RouteGroup | null>(null);
+  const [pickDir, setPickDir] = useState<string | null>(null);
+  const [pickLoading, setPickLoading] = useState(false);
+
+  // Reset picker when a different reroute is expanded
+  useEffect(() => {
+    setPickGroup(null);
+    setPickDir(null);
+  }, [expandedRerouteId]);
+
   // Get token
-  const tokenQuery = useQuery({
+  useQuery({
     queryKey: ["auth-token"],
     queryFn: async () => {
       const supabase = createClient();
@@ -38,8 +54,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     queryKey: ["reroutes"],
     queryFn: async () => {
       if (!token) return [];
-      const data = await reroutes.list(token);
-      return data;
+      return reroutes.list(token);
     },
     enabled: !!token,
   });
@@ -48,40 +63,109 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     queryKey: ["saved-routes"],
     queryFn: async () => {
       if (!token) return [];
-      const data = await savedRoutesApi.list(token);
-      return data;
+      return savedRoutesApi.list(token);
     },
     enabled: !!token,
   });
 
-  async function handleOpenReroute(reroute: Reroute) {
-    if (!reroute.saved_routes || reroute.saved_routes.length === 0) return;
-    const route = reroute.saved_routes[0];
-    if (!token) return;
+  // MTD data — reuses same cache keys as RoutePicker (no extra network calls)
+  const { data: rgData } = useQuery({
+    queryKey: ["mtd-route-groups"],
+    queryFn: () => mtd.routeGroups(),
+    staleTime: 5 * 60 * 1000,
+  });
 
-    const fullRoute = await savedRoutesApi.get(route.id, token);
-    setActiveRerouteId(reroute.id);
-    useEditorStore.setState({
-      selectedRouteGroup: null,
-      selectedDirection: null,
-      originalStops: [],
-      stops: fullRoute.route_stops,
-      shapeId: null,
-      isCustom: true,
-      customMeta: {
-        name: fullRoute.name,
-        shortName: fullRoute.short_name || "",
-        color: fullRoute.color || "009B77",
-      },
-      savedRouteId: fullRoute.id,
-      activeRerouteId: reroute.id,
-      isDirty: false,
-      selectedStopId: null,
-      routePreviewEnabled: true,
-      isSuspiciousRoute: false,
-      dismissedWarnings: new Set(),
-      history: [],
-    });
+  const { data: tripsData } = useQuery({
+    queryKey: ["mtd-trips"],
+    queryFn: () => mtd.trips(),
+    staleTime: 60 * 60 * 1000,
+    enabled: !!expandedRerouteId, // lazy — only needed when a card is open
+  });
+
+  const { data: stopsData } = useQuery({
+    queryKey: ["mtd-stops"],
+    queryFn: () => mtd.stops(),
+    staleTime: 60 * 60 * 1000,
+    enabled: !!expandedRerouteId,
+  });
+
+  const routeGroups = useMemo(
+    () => (rgData?.result ?? []).slice().sort((a, b) => (a.sortNumber ?? 0) - (b.sortNumber ?? 0)),
+    [rgData]
+  );
+
+  const directionsByGroup = useMemo(
+    () => buildDirectionsByGroup(tripsData?.result ?? []),
+    [tripsData]
+  );
+
+  async function handleOpenReroute(reroute: Reroute, routeId: string) {
+    if (!token) return;
+    const fullRoute = await savedRoutesApi.get(routeId, token);
+    const stops: EditorStop[] = fullRoute.route_stops
+      .sort((a, b) => a.stop_sequence - b.stop_sequence)
+      .map((s) => ({
+        stop_sequence: s.stop_sequence,
+        stop_id: s.stop_id ?? null,
+        stop_name: s.stop_name,
+        stop_lat: s.stop_lat,
+        stop_lon: s.stop_lon,
+      }));
+    const errs = validateRoute(stops);
+
+    if (fullRoute.is_custom) {
+      useEditorStore.setState({
+        selectedRouteGroup: null,
+        selectedDirection: null,
+        originalStops: stops,
+        stops,
+        shapeId: null,
+        isCustom: true,
+        customMeta: {
+          name: fullRoute.name,
+          shortName: fullRoute.short_name ?? "",
+          color: fullRoute.color ?? "#009B77",
+        },
+        savedRouteId: fullRoute.id,
+        activeRerouteId: reroute.id,
+        isDirty: false,
+        selectedStopId: null,
+        routePreviewEnabled: true,
+        isSuspiciousRoute: false,
+        isRouteComputing: false,
+        dismissedWarnings: new Set(),
+        history: [],
+        validationErrors: errs,
+        isValid: errs.filter((e) => e.severity === "error").length === 0,
+      });
+    } else {
+      useEditorStore.setState({
+        selectedRouteGroup: {
+          id: fullRoute.base_route_id ?? "",
+          routeGroupName: fullRoute.name,
+          color: (fullRoute.color ?? "#009B77").replace("#", ""),
+          textColor: "ffffff",
+          routes: fullRoute.short_name ? [{ id: "", number: fullRoute.short_name }] : [],
+        },
+        selectedDirection: "",
+        originalStops: stops,
+        stops,
+        shapeId: null,
+        isCustom: false,
+        customMeta: null,
+        savedRouteId: fullRoute.id,
+        activeRerouteId: reroute.id,
+        isDirty: false,
+        selectedStopId: null,
+        routePreviewEnabled: true,
+        isSuspiciousRoute: false,
+        isRouteComputing: false,
+        dismissedWarnings: new Set(),
+        history: [],
+        validationErrors: errs,
+        isValid: errs.filter((e) => e.severity === "error").length === 0,
+      });
+    }
     onClose();
   }
 
@@ -91,10 +175,75 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     queryClient.invalidateQueries({ queryKey: ["reroutes"] });
   }
 
+  async function handleExportAll(reroute: Reroute) {
+    if (!token || !reroute.saved_routes?.length) return;
+    setExportingRerouteId(reroute.id);
+    try {
+      for (let i = 0; i < reroute.saved_routes.length; i++) {
+        const routeRef = reroute.saved_routes[i];
+        const fullRoute = await savedRoutesApi.get(routeRef.id, token);
+        const color = fullRoute.color ?? "#009B77";
+        const payload: ExportPayload = {
+          original_stops: [],
+          modified_stops: fullRoute.route_stops
+            .sort((a, b) => a.stop_sequence - b.stop_sequence)
+            .map((s) => ({ lat: s.stop_lat, lon: s.stop_lon, stop_name: s.stop_name })),
+          route_color: color,
+        };
+        const blob = await exportPng(payload);
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `${reroute.name}-${routeRef.name}.png`.replace(/[^\w\s\-().]/g, "_");
+        a.click();
+        URL.revokeObjectURL(url);
+        if (i < reroute.saved_routes.length - 1) {
+          await new Promise((r) => setTimeout(r, 400));
+        }
+      }
+    } finally {
+      setExportingRerouteId(null);
+    }
+  }
+
+  async function handleOpenInEditor(rerouteId: string) {
+    if (!pickGroup || !pickDir) return;
+    setPickLoading(true);
+    try {
+      const stopMap = buildStopMap(stopsData?.result ?? []);
+      const result = await loadMTDRoute(pickGroup, pickDir, tripsData?.result ?? [], queryClient, stopMap);
+      if (!result) return;
+      const errs = validateRoute(result.stops);
+      useEditorStore.setState({
+        selectedRouteGroup: pickGroup,
+        selectedDirection: pickDir,
+        originalStops: result.stops,
+        stops: result.stops,
+        shapeId: result.shapeId,
+        isCustom: false,
+        customMeta: null,
+        savedRouteId: null,
+        activeRerouteId: rerouteId,
+        isDirty: false,
+        routePreviewEnabled: true,
+        isSuspiciousRoute: false,
+        isRouteComputing: false,
+        selectedStopId: null,
+        dismissedWarnings: new Set(),
+        history: [],
+        validationErrors: errs,
+        isValid: errs.filter((e) => e.severity === "error").length === 0,
+      });
+      onClose();
+    } finally {
+      setPickLoading(false);
+    }
+  }
+
   const routesInReroutes = new Set(
     rerouteList.flatMap((r) => r.saved_routes?.map((sr) => sr.id) || [])
   );
-  const availableRoutes = allSavedRoutes.filter((r) => !routesInReroutes.has(r.id));
+  const availableRoutes = allSavedRoutes.filter((r) => !routesInReroutes.has(r.id) && !r.reroute_id);
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
@@ -154,6 +303,17 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                     </div>
 
                     <button
+                      onClick={() => void handleExportAll(reroute)}
+                      disabled={exportingRerouteId === reroute.id || !reroute.saved_routes?.length}
+                      title={!reroute.saved_routes?.length ? "No routes to export" : "Export all routes as PNGs"}
+                      className="text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-40"
+                    >
+                      {exportingRerouteId === reroute.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <Download className="w-4 h-4" />}
+                    </button>
+
+                    <button
                       onClick={() => handleDeleteReroute(reroute.id)}
                       className="text-destructive hover:text-destructive/80 shrink-0"
                     >
@@ -162,9 +322,10 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                   </div>
 
                   {expandedRerouteId === reroute.id && (
-                    <div className="mt-4 pt-4 border-t space-y-3">
+                    <div className="mt-4 pt-4 border-t space-y-4">
+                      {/* Saved route edits in this reroute */}
                       <div>
-                        <h4 className="text-sm font-medium mb-2">Routes in this reroute</h4>
+                        <h4 className="text-sm font-medium mb-2">Route edits in this reroute</h4>
                         {reroute.saved_routes && reroute.saved_routes.length > 0 ? (
                           <div className="space-y-2">
                             {reroute.saved_routes.map((route) => (
@@ -176,12 +337,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                                 <Button
                                   size="sm"
                                   variant="outline"
-                                  onClick={() =>
-                                    handleOpenReroute({
-                                      ...reroute,
-                                      saved_routes: [route],
-                                    })
-                                  }
+                                  onClick={() => handleOpenReroute(reroute, route.id)}
                                 >
                                   Open
                                 </Button>
@@ -200,13 +356,56 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-xs text-muted-foreground">No routes added yet</p>
+                          <p className="text-xs text-muted-foreground">No route edits yet</p>
                         )}
                       </div>
 
+                      {/* Edit a route directly from this reroute context */}
+                      <div className="border-t pt-4">
+                        <h4 className="text-sm font-medium mb-2">Edit a route in this reroute</h4>
+                        <div className="flex flex-col gap-2">
+                          <select
+                            className="text-sm border rounded px-2 py-1.5 bg-background"
+                            value={pickGroup?.id ?? ""}
+                            onChange={(e) => {
+                              const g = routeGroups.find((r) => r.id === e.target.value) ?? null;
+                              setPickGroup(g);
+                              setPickDir(null);
+                            }}
+                          >
+                            <option value="">Select route…</option>
+                            {routeGroups.map((g) => (
+                              <option key={g.id} value={g.id ?? ""}>{g.routeGroupName}</option>
+                            ))}
+                          </select>
+
+                          {pickGroup && (
+                            <select
+                              className="text-sm border rounded px-2 py-1.5 bg-background"
+                              value={pickDir ?? ""}
+                              onChange={(e) => setPickDir(e.target.value || null)}
+                            >
+                              <option value="">Select direction…</option>
+                              {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
+                                <option key={d.name} value={d.name}>{d.name}</option>
+                              ))}
+                            </select>
+                          )}
+
+                          <Button
+                            size="sm"
+                            disabled={!pickGroup || !pickDir || pickLoading}
+                            onClick={() => handleOpenInEditor(reroute.id)}
+                          >
+                            {pickLoading ? "Loading…" : "Open in editor"}
+                          </Button>
+                        </div>
+                      </div>
+
+                      {/* Link an existing permanent edit to this reroute */}
                       {availableRoutes.length > 0 && (
-                        <div>
-                          <h4 className="text-sm font-medium mb-2">Add routes</h4>
+                        <div className="border-t pt-4">
+                          <h4 className="text-sm font-medium mb-2">Link a saved edit</h4>
                           <div className="space-y-1 max-h-32 overflow-y-auto">
                             {availableRoutes.map((route) => (
                               <button
@@ -214,13 +413,12 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                                 onClick={async () => {
                                   if (!token) return;
                                   await reroutes.addRoute(reroute.id, route.id, token);
-                                  queryClient.invalidateQueries({
-                                    queryKey: ["reroutes"],
-                                  });
+                                  queryClient.invalidateQueries({ queryKey: ["reroutes"] });
+                                  queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
                                 }}
                                 className="w-full text-left px-3 py-2 text-sm hover:bg-muted rounded transition-colors"
                               >
-                                <span>{route.name}</span>
+                                {route.name}
                               </button>
                             ))}
                           </div>

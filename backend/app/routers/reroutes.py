@@ -85,7 +85,7 @@ def create_reroute(payload: RerouteIn, authorization: str = Header(None)):
     user_id = _user_id(authorization)
     client = _client()
 
-    data = payload.model_dump(exclude_unset=True)
+    data = payload.model_dump(exclude_unset=True, mode="json")
     data["user_id"] = str(user_id)
 
     res = client.from_("reroutes").insert(data).select(
@@ -134,7 +134,7 @@ def update_reroute(reroute_id: UUID, payload: RerouteIn, authorization: str = He
     if not check.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND)
 
-    data = payload.model_dump(exclude_unset=True)
+    data = payload.model_dump(exclude_unset=True, mode="json")
     res = client.from_("reroutes").update(data).eq("id", str(reroute_id)).select(
         "id, user_id, name, description, start_date, end_date, created_at, updated_at"
     ).execute()

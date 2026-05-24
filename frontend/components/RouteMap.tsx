@@ -12,7 +12,7 @@ import "maplibre-gl/dist/maplibre-gl.css";
 import { useQuery } from "@tanstack/react-query";
 import { useEditorStore } from "@/store/editorStore";
 import { mtd, type ShapePoint } from "@/lib/api";
-import { buildStopMap, nearestStop, buildModifiedGeometry, routeWithOSRM, stopGroupName } from "@/lib/stopUtils";
+import { buildStopMap, nearestStop, buildModifiedGeometry, routeWithOSRM } from "@/lib/stopUtils";
 
 const INITIAL_VIEW = { longitude: -88.2272, latitude: 40.1164, zoom: 13 };
 
@@ -117,8 +117,11 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
   );
 
   // ── OSRM routing for modified line ──────────────────────────────────────────
+  const hasShape = shapePoints.length > 0;
   useEffect(() => {
-    if ((!isDirty && !isCustom) || stops.length < 2 || !routePreviewEnabled) {
+    // Skip OSRM only when the MTD shape is available and no edits have been made yet.
+    // Saved routes with no shape (shapePoints=[]) always need OSRM to draw their line.
+    if ((!isDirty && !isCustom && hasShape) || stops.length < 2 || !routePreviewEnabled) {
       setModifiedCoords(null);
       setSuspiciousRoute(false);
       setRouteComputing(false);
@@ -163,7 +166,7 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
       // clear the computing indicator so it doesn't get stuck.
       setRouteComputing(false);
     };
-  }, [isDirty, isCustom, stops, shapePoints, routePreviewEnabled, setSuspiciousRoute, setRouteComputing]);
+  }, [isDirty, isCustom, hasShape, stops, shapePoints, routePreviewEnabled, setSuspiciousRoute, setRouteComputing]);
 
   // ── Diff sets ───────────────────────────────────────────────────────────────
   const origIdSet = useMemo(
@@ -187,12 +190,10 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
 
   const nearbyStops = useMemo(() => {
     if (!selectedStop?.stop_id) return [];
-    const selectedGroup = stopGroupName(selectedStop.stop_name);
     const results: Array<{ id: string; name: string; lat: number; lon: number }> = [];
     for (const [id, info] of stopMap) {
       if (currIdSet.has(id)) continue; // already in route
       if (!info.name.includes(" (")) continue; // skip group-level entries with no direction
-      if (stopGroupName(info.name) === selectedGroup) continue; // same intersection
       const d =
         (info.lat - selectedStop.stop_lat) ** 2 +
         (info.lon - selectedStop.stop_lon) ** 2;
@@ -211,6 +212,34 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
     });
     return results.slice(0, 30);
   }, [selectedStop, stopMap, currIdSet]);
+
+  // IDs already covered by nearbyStops — used to deduplicate route-group suggestions.
+  const nearbyStopIds = useMemo(
+    () => new Set(nearbyStops.map((s) => s.id)),
+    [nearbyStops]
+  );
+
+  // Route-group suggestions: stops from the original route not currently in the edit.
+  // Only shown in editing mode (isCustom=false) when a stop is selected.
+  // Uses shapePoints for live MTD routes; falls back to originalStops for saved routes.
+  const routeGroupStops = useMemo(() => {
+    if (isCustom || !selectedStop?.stop_id) return [];
+    const results: Array<{ id: string; name: string; lat: number; lon: number }> = [];
+    if (shapePoints.length > 0) {
+      for (const pt of shapePoints) {
+        if (!pt.stopId || currIdSet.has(pt.stopId) || nearbyStopIds.has(pt.stopId)) continue;
+        const info = stopMap.get(pt.stopId);
+        if (!info) continue;
+        results.push({ id: pt.stopId, name: info.name, lat: info.lat, lon: info.lon });
+      }
+    } else {
+      for (const stop of originalStops) {
+        if (!stop.stop_id || currIdSet.has(stop.stop_id) || nearbyStopIds.has(stop.stop_id)) continue;
+        results.push({ id: stop.stop_id, name: stop.stop_name, lat: stop.stop_lat, lon: stop.stop_lon });
+      }
+    }
+    return results;
+  }, [isCustom, selectedStop, shapePoints, originalStops, stopMap, currIdSet, nearbyStopIds]);
 
   // Original stops that are no longer in the current route → gray X
   const removedStops = useMemo(
@@ -256,7 +285,7 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
   // When suspicious, rendered in amber to signal the path may be inaccurate.
   const { isSuspiciousRoute } = useEditorStore();
   const modifiedLineGeoJSON = useMemo(() => {
-    const coords = (isDirty || isCustom) && routePreviewEnabled && modifiedCoords && modifiedCoords.length > 1
+    const coords = (isDirty || isCustom || !hasShape) && routePreviewEnabled && modifiedCoords && modifiedCoords.length > 1
       ? modifiedCoords
       : [];
     const lineColor = isSuspiciousRoute ? "#f59e0b" : `#${routeColor}`;
@@ -410,6 +439,38 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
             {/* Tooltip */}
             <span className="pointer-events-none absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-0.5 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
               {nearby.name}
+            </span>
+          </button>
+        </Marker>
+      ))}
+
+      {/* Route-group stop suggestions — editing mode only, shown when a stop is selected */}
+      {routeGroupStops.map((stop) => (
+        <Marker
+          key={`route-${stop.id}`}
+          longitude={stop.lon}
+          latitude={stop.lat}
+          anchor="center"
+        >
+          <button
+            onClick={() => handleNearbyClick(stop)}
+            title={stop.name}
+            className="group relative flex items-center justify-center focus:outline-none"
+          >
+            <span
+              className="relative block rotate-45 border-2 border-white transition-transform group-hover:scale-125"
+              style={{
+                width: 16,
+                height: 16,
+                backgroundColor: "#6366f1",
+                boxShadow: "0 2px 6px rgba(0,0,0,0.45)",
+              }}
+            />
+            <span className="pointer-events-none absolute text-white font-bold leading-none select-none" style={{ fontSize: 10 }}>
+              →
+            </span>
+            <span className="pointer-events-none absolute bottom-full mb-2.5 left-1/2 -translate-x-1/2 whitespace-nowrap rounded bg-gray-900 px-2 py-0.5 text-xs text-white opacity-0 group-hover:opacity-100 transition-opacity">
+              {stop.name}
             </span>
           </button>
         </Marker>
