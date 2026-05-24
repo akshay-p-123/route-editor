@@ -85,14 +85,14 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     queryKey: ["mtd-trips"],
     queryFn: () => mtd.trips(),
     staleTime: 60 * 60 * 1000,
-    enabled: !!expandedRerouteId || !!pickGroup,
+    enabled: !!expandedRerouteId || !!pickGroup || rerouteList.length > 0,
   });
 
   const { data: stopsData } = useQuery({
     queryKey: ["mtd-stops"],
     queryFn: () => mtd.stops(),
     staleTime: 60 * 60 * 1000,
-    enabled: !!expandedRerouteId || !!pickGroup,
+    enabled: !!expandedRerouteId || !!pickGroup || rerouteList.length > 0,
   });
 
   const routeGroups = useMemo(
@@ -181,6 +181,25 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     queryClient.invalidateQueries({ queryKey: ["reroutes"] });
   }
 
+  async function getOriginalStops(baseRouteId: string): Promise<EditorStop[]> {
+    const group = routeGroups.find((g) => g.id === baseRouteId);
+    if (!group) return [];
+    const dirs = directionsByGroup.get(baseRouteId) ?? [];
+    if (dirs.length === 0) return [];
+    const stopMap = buildStopMap(stopsData?.result ?? []);
+    let bestStops: EditorStop[] = [];
+    let bestScore = -1;
+    for (const dir of dirs) {
+      const result = await loadMTDRoute(group, dir.name, tripsData?.result ?? [], queryClient, stopMap);
+      if (!result) continue;
+      if (result.stops.length > bestScore) {
+        bestScore = result.stops.length;
+        bestStops = result.stops;
+      }
+    }
+    return bestStops;
+  }
+
   async function handleExportAll(reroute: Reroute) {
     if (!token || !reroute.saved_routes?.length) return;
     setExportingRerouteId(reroute.id);
@@ -189,11 +208,24 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
         const routeRef = reroute.saved_routes[i];
         const fullRoute = await savedRoutesApi.get(routeRef.id, token);
         const color = fullRoute.color ?? "#009B77";
+
+        const origStops = fullRoute.is_custom || !fullRoute.base_route_id
+          ? []
+          : await getOriginalStops(fullRoute.base_route_id);
+        const origIdSet = new Set(origStops.map((s) => s.stop_id).filter((id): id is string => !!id));
+        const savedIdSet = new Set(fullRoute.route_stops.map((s) => s.stop_id).filter((id): id is string => !!id));
+
         const payload: ExportPayload = {
-          original_stops: [],
+          original_stops: origStops.map((s) => ({
+            lat: s.stop_lat, lon: s.stop_lon, stop_name: s.stop_name,
+            is_removed: !!s.stop_id && !savedIdSet.has(s.stop_id),
+          })),
           modified_stops: fullRoute.route_stops
             .sort((a, b) => a.stop_sequence - b.stop_sequence)
-            .map((s) => ({ lat: s.stop_lat, lon: s.stop_lon, stop_name: s.stop_name })),
+            .map((s) => ({
+              lat: s.stop_lat, lon: s.stop_lon, stop_name: s.stop_name,
+              is_added: !!s.stop_id && !origIdSet.has(s.stop_id),
+            })),
           route_color: color,
         };
         const blob = await exportPng(payload);

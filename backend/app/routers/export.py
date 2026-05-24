@@ -87,8 +87,9 @@ def _build_html(body: ExportRequest) -> str:
                    'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 }}
         }});""")
 
-    all_lons = [s.lon for s in body.original_stops + body.modified_stops] or [-88.30]
-    all_lats = [s.lat for s in body.original_stops + body.modified_stops] or [40.09]
+    all_stops = body.original_stops + body.modified_stops
+    all_lons = [s.lon for s in all_stops] or [-88.30]
+    all_lats = [s.lat for s in all_stops] or [40.09]
     bounds = json.dumps([[min(all_lons), min(all_lats)], [max(all_lons), max(all_lats)]])
     layers_js = "\n  ".join(layers)
 
@@ -104,24 +105,6 @@ def _build_html(body: ExportRequest) -> str:
 <div id="map"></div>
 <script>
 const sources = {json.dumps(sources)};
-// Raw stop coordinates for OSRM routing
-const origCoords = {json.dumps(orig)};
-const modCoords  = {json.dumps(mod)};
-
-async function osrmRoute(coords) {{
-  if (coords.length < 2) return coords;
-  const path = coords.map(c => c.join(',')).join(';');
-  try {{
-    const r = await fetch(
-      'https://router.project-osrm.org/route/v1/driving/' + path +
-      '?overview=full&geometries=geojson',
-      {{ signal: AbortSignal.timeout(8000) }}
-    );
-    const d = await r.json();
-    if (d.code === 'Ok' && d.routes?.[0]) return d.routes[0].geometry.coordinates;
-  }} catch(e) {{ console.warn('OSRM failed', e); }}
-  return coords; // straight-line fallback
-}}
 
 const map = new maplibregl.Map({{
   container: 'map',
@@ -131,32 +114,14 @@ const map = new maplibregl.Map({{
   attributionControl: false,
 }});
 
-map.on('load', async function() {{
+map.on('load', function() {{
   for (const [id, src] of Object.entries(sources)) map.addSource(id, src);
   {layers_js}
 
-  // Fetch road-following geometry for both lines in parallel, then update sources
-  const [origRoad, modRoad] = await Promise.all([
-    origCoords.length >= 2 ? osrmRoute(origCoords) : Promise.resolve(origCoords),
-    modCoords.length  >= 2 ? osrmRoute(modCoords)  : Promise.resolve(modCoords),
-  ]);
-
-  if (origCoords.length >= 2) {{
-    map.getSource('orig_line').setData({{
-      type: 'Feature', geometry: {{ type: 'LineString', coordinates: origRoad }}, properties: {{}}
-    }});
-  }}
-  if (modCoords.length >= 2) {{
-    map.getSource('mod_line').setData({{
-      type: 'Feature', geometry: {{ type: 'LineString', coordinates: modRoad }}, properties: {{}}
-    }});
-  }}
-
-  // Signal ready after the map re-renders the updated sources, with a fallback.
   let done = false;
   function signal() {{ if (!done) {{ done = true; document.body.setAttribute('data-ready', 'true'); }} }}
   map.once('idle', signal);
-  setTimeout(signal, 4000);
+  setTimeout(signal, 2500);
 }});
 
 map.on('error', function(e) {{
