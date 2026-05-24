@@ -1,258 +1,85 @@
 # MTD Route Editor
 
-A web app for editing and creating bus routes for Champaign-Urbana's Mass Transit District (MTD). Admins can visually reroute existing lines or build custom ones, then export a rider-facing PNG showing what changed.
-
-## Stack
-
-- **Frontend** — Next.js 14 (App Router), React Map GL + MapLibre GL JS, Zustand, TanStack Query, dnd-kit, shadcn/ui
-- **Backend** — FastAPI (Python), Supabase (Postgres + Auth), Playwright (PNG export)
-- **Map tiles** — CARTO Positron (free, no API key)
-- **Transit data** — MTD API v3 at api.mtd.dev (read-only)
-
-**No Mapbox dependency.** Map tiles come from CARTO (free, no key). PNG exports are rendered by a headless Chromium browser via Playwright.
+A web tool for planning and communicating bus route changes for Champaign-Urbana's Mass Transit District (MTD). Planners can modify existing routes, build new ones from scratch, group changes under a named reroute, and export a rider-facing PNG showing exactly what changed.
 
 ---
 
-## Prerequisites
+## Usage
 
-- Node.js ≥ 18
-- Python ≥ 3.11
-- An [MTD v3 API key](https://mtd.dev) — sign up at mtd.dev (v2 keys from developer.mtd.org do NOT work)
-- A [Supabase project](https://supabase.com/) (free tier)
+To edit an existing MTD route, find it in the left sidebar by route group and select a direction. The stop list loads on the right and the route appears on the map. Drag stops to reorder them, click the X to remove one, hover and click the pencil icon to replace a stop with a different one, or use the search bar at the bottom to append new stops. Click Save in the toolbar to persist the edit. If you are not signed in, you can still explore and edit but nothing will be saved.
 
----
+To build a route from scratch, click New in the sidebar, fill in a name and optional color, then add stops in sequence using the search bar.
 
-## 1. Supabase setup
+To group related edits under a named detour or service change, open the Reroutes panel from the top navigation. Create a reroute, then use the route picker inside that reroute's card to load an MTD route directly into the editor with the reroute context already set. Saving from there attaches the modified route to the reroute automatically.
 
-1. Create a new Supabase project.
-2. In the SQL editor, run the contents of [`supabase_schema.sql`](./supabase_schema.sql).
-3. Enable **Email** auth under Authentication → Providers.
-4. Copy your **Project URL**, **anon key**, and **service_role key** from Settings → API.
-
----
-
-## 2. Frontend setup
-
-```bash
-cd frontend
-cp .env.local.example .env.local
-```
-
-Fill in `.env.local`:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-NEXT_PUBLIC_API_URL=http://localhost:8000
-```
-
-```bash
-npm install
-npm run dev   # http://localhost:3000
-```
-
----
-
-## 3. Backend setup
-
-```bash
-cd backend
-cp .env.example .env
-```
-
-Fill in `.env`:
-
-```env
-MTD_API_KEY=your_mtd_v3_key
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-CORS_ORIGINS=["http://localhost:3000"]
-```
-
-Install Python dependencies and the Playwright browser (one-time):
-
-```bash
-pip install -r requirements.txt
-playwright install chromium
-```
-
-```bash
-uvicorn app.main:app --reload   # http://localhost:8000
-```
+Once an edit is complete, click Export PNG to download a map image showing what changed. The image is suitable for posting to rider communications or service alerts.
 
 ---
 
 ## Features
 
-### Edit an existing route
+### Route editing
 
-1. Pick a route from the left sidebar (all MTD routes load automatically).
-2. The map shows the route polyline and stop pins.
-3. **List mode** (right panel): drag stops to reorder, click × to remove, search to add.
-4. Click **Save** to persist your edits to Supabase (requires sign-in).
+All active MTD routes are listed in the left sidebar, organized by route group (Teal, Silver, Gold, Green, etc.). Selecting a group expands its available directions; choosing one loads the full stop list and draws the route polyline on the map.
 
-### Create a custom route
+From there, stops can be reordered by dragging, removed with a single click, or replaced inline using a stop search typeahead. New stops can be appended to the end of the route from the search bar at the bottom of the stop list.
 
-1. Click **New** in the route picker.
-2. Set a name, route number, and color.
-3. Use stop search to build the stop list from scratch.
-4. Save when done.
+### Custom routes
 
-### Export rider-facing PNG
+The New button in the sidebar opens a form to create a route from scratch. A name, short route number, and brand color can be specified. Stops are then added in sequence using the same search interface used for editing.
 
-Click **Export PNG** in the toolbar. The backend launches a headless Chromium browser, renders the route on a MapLibre map, and returns a PNG showing:
+### Reroutes
 
-- Original route (grey dashed)
-- Modified route (route color, solid)
-- Green circles = added stops, red = removed stops, grey = unchanged
+A reroute is a named grouping of route modifications that belong together, such as all the changes made for a road closure or a construction detour. Reroutes can have an optional description, start date, and end date.
 
-### My Routes dashboard
+Each reroute holds references to modified saved routes. From the Reroutes panel, a planner can open any MTD route into the editor pre-tagged to a specific reroute, edit it, and save it. Routes tied to a reroute are shown inside that reroute's card rather than in the main sidebar, keeping permanent edits and temporary detours visually separate.
 
-Sign in to see all your saved routes. Click the pencil icon to reopen any route in the editor.
+### Guest access
 
----
+The editor is accessible without signing in. Guests can load any MTD route, make edits, and view the result on the map. A notice in the toolbar explains that changes will not be saved. Signing in unlocks saving, the My Routes dashboard, and reroute management.
 
-## Project structure
+### Validation
 
-```text
-route-editor/
-├── frontend/               # Next.js app
-│   ├── app/
-│   │   ├── layout.tsx
-│   │   └── page.tsx        # Main editor page
-│   ├── components/
-│   │   ├── RouteMap.tsx    # MapLibre GL JS map (via react-map-gl/maplibre)
-│   │   ├── RoutePicker.tsx # Left sidebar: MTD route groups
-│   │   ├── StopList.tsx    # Right panel: dnd-kit stop list
-│   │   ├── StopSearch.tsx  # Server-side stop search
-│   │   ├── EditorToolbar.tsx
-│   │   ├── AuthModal.tsx
-│   │   ├── NewRouteModal.tsx
-│   │   ├── SavedRoutesDashboard.tsx
-│   │   └── Providers.tsx
-│   ├── lib/
-│   │   ├── api.ts          # Typed API client
-│   │   └── supabase.ts
-│   └── store/
-│       └── editorStore.ts  # Zustand edit session state
-├── backend/                # FastAPI app
-│   └── app/
-│       ├── main.py
-│       ├── config.py
-│       ├── routers/
-│       │   ├── mtd.py      # MTD API v3 proxy
-│       │   ├── routes.py   # CRUD for saved routes
-│       │   └── export.py   # PNG export via Playwright + MapLibre
-│       └── services/
-│           └── mtd.py      # MTD API v3 client (X-ApiKey header)
-└── supabase_schema.sql
-```
+The editor runs live validation on the stop list and displays inline warnings and errors:
+
+- Stops with coordinates at (0, 0) or outside the MTD service area are flagged as errors.
+- Consecutive stops at the same intersection are flagged as warnings.
+- Newly added stops that appear to be on the wrong side of the road for the direction of travel are flagged as warnings, with an option to dismiss the warning if the placement is intentional.
+
+### PNG export
+
+The Export PNG button generates a static map image suitable for sharing with riders. The backend builds a self-contained HTML page, loads it in a headless Chromium browser via Playwright, waits for the map to finish rendering, and returns a screenshot. The image shows:
+
+- The original route in grey dashed lines
+- The modified route in the route's brand color
+- Green circles for added stops, red for removed stops, grey for unchanged stops
+
+Route lines are snapped to actual roads using the public OSRM routing API, with straight-line fallback if the request fails.
+
+### Map navigation
+
+The map uses CARTO Positron tiles with no API key required. A "Back to Champaign" button appears in the top-right corner of the map and highlights blue when the viewport has drifted far enough from the MTD service area to warrant a prompt.
 
 ---
 
-## Deployment
+## Tech stack
 
-The frontend is a standard Next.js app and deploys anywhere that supports Node.js. The backend requires a persistent server (not serverless) because Playwright downloads and runs a Chromium binary — a `Dockerfile` is included at `backend/Dockerfile`.
+Frontend: Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui, Zustand, TanStack Query, react-map-gl with MapLibre GL JS, dnd-kit
 
-The recommended setup is **Vercel** (frontend) + **Railway** (backend).
+Backend: FastAPI (Python), Supabase (Postgres + Auth), Playwright
 
----
+Map tiles: CARTO Positron (no API key)
 
-### How API routing works
-
-The browser never calls the backend directly. All `/api/*` requests go to the Next.js server, which rewrites them to the backend using the server-side `BACKEND_URL` env var. This means no CORS configuration is needed on the backend, and the backend URL is never exposed to the browser.
+Transit data: MTD API v3 at api.mtd.dev
 
 ---
 
-### Frontend → Vercel
+## Architecture notes
 
-1. Push the repo to GitHub.
-2. Go to [vercel.com](https://vercel.com) → **New Project** → import your repo.
-3. Set **Root Directory** to `frontend`.
-4. Add these environment variables under **Settings → Environment Variables**, then deploy:
+The browser never calls the backend directly. All `/api/*` requests go to the Next.js server, which rewrites them to the backend using a server-side environment variable. The MTD API key and Supabase service role key are never sent to the client.
 
-```env
-BACKEND_URL=https://your-backend.railway.app
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-```
+The backend maintains an in-memory TTL cache in front of the MTD API. Route groups, stops, and trips are cached for one hour. Shape geometry is cached for 24 hours since shapes do not change between schedule releases. Stop search bypasses the cache entirely.
 
-Vercel auto-deploys on every push to `main`.
+Authentication is stateless. Every request to a protected endpoint includes a Supabase JWT as a Bearer token. The backend verifies it against Supabase using the service role key and extracts the user ID. All database queries are scoped to that user ID so users can only read and modify their own data.
 
----
-
-### Backend → Railway
-
-Railway builds and runs the included `Dockerfile` automatically.
-
-1. Go to [railway.app](https://railway.app) → **New Project** → **Deploy from GitHub repo**.
-2. Select your repo, set the **Root Directory** to `backend`.
-3. Under **Variables**, add the following and deploy. Then under **Settings → Networking** generate a public domain and copy it back into Vercel as `BACKEND_URL`.
-
-```env
-MTD_API_KEY=your_mtd_v3_key
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
-```
-
----
-
-### Backend → Render (alternative)
-
-1. Go to [render.com](https://render.com) → **New → Web Service** → connect your repo.
-2. Set **Root Directory** to `backend`, **Runtime** to **Docker**.
-3. Add the same environment variables as above under **Environment**.
-4. Set **Health Check Path** to `/health`.
-
----
-
-### Self-hosted with Docker Compose
-
-Create a `.env` at the repo root:
-
-```env
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_key
-```
-
-Backend variables go in `backend/.env` as normal. Then create `docker-compose.yml` at the repo root:
-
-```yaml
-services:
-  backend:
-    build: ./backend
-    ports:
-      - "8000:8000"
-    env_file: ./backend/.env
-
-  frontend:
-    build:
-      context: ./frontend
-      args:
-        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
-        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
-    environment:
-      BACKEND_URL: http://backend:8000
-    ports:
-      - "3000:3000"
-    depends_on:
-      - backend
-```
-
-`BACKEND_URL` is passed as a runtime environment variable (not a build arg), so the Next.js server can use the Docker-internal hostname `backend` to reach the backend container without the browser ever seeing it. Then:
-
-```bash
-docker compose up --build
-```
-
----
-
-## MTD API v3 endpoints used
-
-| Endpoint              | Purpose                                              |
-| --------------------- | ---------------------------------------------------- |
-| `GET /routes/groups`  | Populate route picker                                |
-| `GET /stops`          | Build stop lookup map (id → name/coords)             |
-| `GET /stops/search`   | Server-side stop search typeahead                    |
-| `GET /trips`          | Find a representative trip per route group           |
-| `GET /shapes/{id}`    | Route polyline + stop sequence (stopId on points)    |
+Reroute associations are stored as a nullable foreign key on the `saved_routes` table. Deleting a reroute nulls out the foreign key on its associated routes rather than deleting them.
