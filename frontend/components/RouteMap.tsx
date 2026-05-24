@@ -86,6 +86,7 @@ function XPin() {
 
 export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
   const mapRef = useRef<MapRef>(null);
+  const [isFarAway, setIsFarAway] = useState(false);
   const {
     stops,
     originalStops,
@@ -375,8 +376,23 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
       initialViewState={INITIAL_VIEW}
       style={{ width: "100%", height: "100%" }}
       mapStyle="https://basemaps.cartocdn.com/gl/positron-gl-style/style.json"
+      onMoveEnd={(e) => {
+        const { lng, lat } = e.target.getCenter();
+        const dist = Math.abs(lng - INITIAL_VIEW.longitude) + Math.abs(lat - INITIAL_VIEW.latitude);
+        setIsFarAway(dist > 0.5);
+      }}
     >
       <NavigationControl position="top-right" />
+
+      <div className="absolute bottom-8 right-3 z-10">
+        <button
+          onClick={() => mapRef.current?.flyTo({ center: [INITIAL_VIEW.longitude, INITIAL_VIEW.latitude], zoom: INITIAL_VIEW.zoom, duration: 1000 })}
+          className={`rounded shadow px-2.5 py-1.5 text-xs font-medium transition-colors border ${isFarAway ? "bg-blue-600 border-blue-600 text-white hover:bg-blue-700" : "bg-white border-gray-300 text-gray-700 hover:bg-blue-50 hover:border-blue-400 hover:text-blue-700"}`}
+          title="Return to Champaign"
+        >
+          Back to Champaign
+        </button>
+      </div>
 
       {/* Original gray dashed line (shown when edits exist) */}
       <Source id="original-line" type="geojson" data={originalLineGeoJSON}>
@@ -490,8 +506,8 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
 
       {/* Current stop pins — draggable */}
       {stops.map((stop, idx) => {
-        const id = stop.stop_id ?? `custom-${idx}`;
-        const isSelected = id === selectedStopId;
+        const id = `${stop.stop_id ?? "custom"}-${idx}`;
+        const isSelected = stop.stop_id === selectedStopId;
         const isAdded = stop.isAdded || (!!stop.stop_id && !origIdSet.has(stop.stop_id));
         const color = isAdded ? "#22c55e" : `#${routeColor || "009B77"}`;
         return (
@@ -504,7 +520,7 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
             onDragEnd={(e) => stop.stop_id && handleDragEnd(e, stop.stop_id)}
           >
             <button
-              onClick={() => handleStopClick(id)}
+              onClick={() => handleStopClick(stop.stop_id ?? id)}
               title={stop.stop_name}
               className="rounded-full border-2 border-white shadow-md transition-transform hover:scale-110 focus:outline-none cursor-grab active:cursor-grabbing"
               style={{

@@ -91,25 +91,23 @@ export default function EditorPage() {
       <header className="h-12 border-b flex items-center px-4 gap-3 shrink-0 bg-background z-10">
         <span className="font-bold text-sm tracking-tight">MTD Route Editor</span>
         <div className="ml-auto flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setShowReroutes(true)}
+          >
+            <MapPin className="w-4 h-4 mr-1.5" />
+            Reroutes
+          </Button>
           {user && (
-            <>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowReroutes(true)}
-              >
-                <MapPin className="w-4 h-4 mr-1.5" />
-                Reroutes
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setShowDashboard(true)}
-              >
-                <FolderOpen className="w-4 h-4 mr-1.5" />
-                My Routes
-              </Button>
-            </>
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setShowDashboard(true)}
+            >
+              <FolderOpen className="w-4 h-4 mr-1.5" />
+              My Routes
+            </Button>
           )}
           {user ? (
             <Button size="sm" variant="ghost" onClick={handleLogout}>

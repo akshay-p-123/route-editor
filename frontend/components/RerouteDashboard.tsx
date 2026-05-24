@@ -11,7 +11,7 @@ import { buildStopMap } from "@/lib/stopUtils";
 import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, Loader2 } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, Loader2, LogIn } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
 
 interface RerouteDashboardProps {
@@ -24,6 +24,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
   const queryClient = useQueryClient();
 
   const [token, setToken] = useState<string | null>(null);
+  const [authLoaded, setAuthLoaded] = useState(false);
 
   const [exportingRerouteId, setExportingRerouteId] = useState<string | null>(null);
 
@@ -46,9 +47,12 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
       const { data: { session } } = await supabase.auth.getSession();
       const t = session?.access_token ?? null;
       setToken(t);
+      setAuthLoaded(true);
       return t;
     },
   });
+
+  const isGuest = authLoaded && !token;
 
   const { data: rerouteList = [], isLoading } = useQuery({
     queryKey: ["reroutes"],
@@ -79,14 +83,14 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     queryKey: ["mtd-trips"],
     queryFn: () => mtd.trips(),
     staleTime: 60 * 60 * 1000,
-    enabled: !!expandedRerouteId, // lazy — only needed when a card is open
+    enabled: !!expandedRerouteId || !!pickGroup,
   });
 
   const { data: stopsData } = useQuery({
     queryKey: ["mtd-stops"],
     queryFn: () => mtd.stops(),
     staleTime: 60 * 60 * 1000,
-    enabled: !!expandedRerouteId,
+    enabled: !!expandedRerouteId || !!pickGroup,
   });
 
   const routeGroups = useMemo(
@@ -206,7 +210,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     }
   }
 
-  async function handleOpenInEditor(rerouteId: string) {
+  async function handleOpenInEditor(rerouteId: string | null) {
     if (!pickGroup || !pickDir) return;
     setPickLoading(true);
     try {
@@ -258,9 +262,57 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
           </button>
         </div>
 
+        {isGuest && (
+          <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border-b border-blue-200">
+            <LogIn className="w-4 h-4 text-blue-500 shrink-0" />
+            <span className="text-sm text-blue-700 flex-1">
+              Sign in to save changes and manage reroutes.
+            </span>
+          </div>
+        )}
+
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-4">
-            {isLoading ? (
+            {isGuest ? (
+              <div>
+                <h4 className="text-sm font-medium mb-3">Edit a route</h4>
+                <div className="flex flex-col gap-2">
+                  <select
+                    className="text-sm border rounded px-2 py-1.5 bg-background"
+                    value={pickGroup?.id ?? ""}
+                    onChange={(e) => {
+                      const g = routeGroups.find((r) => r.id === e.target.value) ?? null;
+                      setPickGroup(g);
+                      setPickDir(null);
+                    }}
+                  >
+                    <option value="">Select route…</option>
+                    {routeGroups.map((g) => (
+                      <option key={g.id} value={g.id ?? ""}>{g.routeGroupName}</option>
+                    ))}
+                  </select>
+                  {pickGroup && (
+                    <select
+                      className="text-sm border rounded px-2 py-1.5 bg-background"
+                      value={pickDir ?? ""}
+                      onChange={(e) => setPickDir(e.target.value || null)}
+                    >
+                      <option value="">Select direction…</option>
+                      {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
+                        <option key={d.name} value={d.name}>{d.name}</option>
+                      ))}
+                    </select>
+                  )}
+                  <Button
+                    size="sm"
+                    disabled={!pickGroup || !pickDir || pickLoading}
+                    onClick={() => handleOpenInEditor(null)}
+                  >
+                    {pickLoading ? "Loading…" : "Open in editor"}
+                  </Button>
+                </div>
+              </div>
+            ) : isLoading ? (
               <p className="text-sm text-muted-foreground">Loading reroutes…</p>
             ) : rerouteList.length === 0 ? (
               <p className="text-sm text-muted-foreground">No reroutes yet</p>
@@ -432,12 +484,14 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
           </div>
         </ScrollArea>
 
-        <div className="px-6 py-4 border-t">
-          <Button onClick={() => setShowNewReroute(true)} className="w-full">
-            <Plus className="w-4 h-4 mr-2" />
-            New Reroute
-          </Button>
-        </div>
+        {!isGuest && (
+          <div className="px-6 py-4 border-t">
+            <Button onClick={() => setShowNewReroute(true)} className="w-full">
+              <Plus className="w-4 h-4 mr-2" />
+              New Reroute
+            </Button>
+          </div>
+        )}
       </div>
 
       {showNewReroute && (

@@ -275,7 +275,7 @@ export default function StopList() {
     setStops(reordered);
   }
 
-  const stopIds = stops.map((s, i) => s.stop_id ?? `custom-${i}`);
+  const stopIds = stops.map((s, i) => `${s.stop_id ?? "custom"}-${i}`);
   const routeName =
     selectedRouteGroup?.routeGroupName ?? customMeta?.name ?? "New Route";
 
@@ -302,7 +302,7 @@ export default function StopList() {
           <SortableContext items={stopIds} strategy={verticalListSortingStrategy}>
             <ul className="py-1">
               {stops.map((stop, index) => {
-                const id = stop.stop_id ?? `custom-${index}`;
+                const id = `${stop.stop_id ?? "custom"}-${index}`;
                 const stopIssues = validationErrors.filter(
                   (e) => e.stopId === stop.stop_id
                 );

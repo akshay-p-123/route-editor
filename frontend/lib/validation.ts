@@ -102,22 +102,6 @@ export function validateRoute(stops: EditorStop[], dismissed: Set<string> = new 
     errors.push({ code: "ONE_STOP", message: "Route needs at least 2 stops", severity: "error" });
   }
 
-  // ── Duplicate stop IDs (error) ─────────────────────────────────────────────
-  const seen = new Map<string, string>();
-  for (const stop of stops) {
-    if (!stop.stop_id) continue;
-    if (seen.has(stop.stop_id)) {
-      errors.push({
-        code: "DUPLICATE_STOP",
-        message: `"${stop.stop_name}" appears more than once`,
-        stopId: stop.stop_id,
-        severity: "error",
-      });
-    } else {
-      seen.set(stop.stop_id, stop.stop_name);
-    }
-  }
-
   // ── Per-stop coordinate checks (errors) ───────────────────────────────────
   for (const stop of stops) {
     errors.push(...validateStop(stop));

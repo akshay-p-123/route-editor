@@ -164,9 +164,12 @@ export default function RoutePicker({ onNewRoute }: RoutePickerProps) {
     }
   }
 
+  const HIDDEN_ROUTES = /cherry|transport|safe\s*rides|west connect|northeast connect/i;
+
   const routeGroups = useMemo(
     () =>
       (rgData?.result ?? [])
+        .filter((g) => !HIDDEN_ROUTES.test(g.routeGroupName ?? ""))
         .slice()
         .sort((a, b) => (a.sortNumber ?? 0) - (b.sortNumber ?? 0)),
     [rgData]

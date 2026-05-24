@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditorStore } from "@/store/editorStore";
 import { savedRoutes, exportPng, type RoutePayload, type ExportPayload, type Reroute } from "@/lib/api";
@@ -35,6 +35,17 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
     undo,
     history,
   } = useEditorStore();
+
+  const [isAuthed, setIsAuthed] = useState<boolean | null>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase.auth.getSession().then(({ data: { session } }) => setIsAuthed(!!session));
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_, session) => {
+      setIsAuthed(!!session);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
 
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -430,6 +441,21 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
             {firstWarning?.message}
             {warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ""}
           </span>
+        </div>
+      )}
+
+      {/* Guest notice — shown when editing without being signed in */}
+      {isAuthed === false && (
+        <div className="bg-blue-50 border-b border-blue-200 px-4 py-1.5 flex items-center gap-2">
+          <span className="text-xs text-blue-700 flex-1">
+            You&apos;re not signed in — changes won&apos;t be saved.
+          </span>
+          <button
+            onClick={onAuthRequired}
+            className="text-xs text-blue-600 underline shrink-0 hover:text-blue-800"
+          >
+            Sign in
+          </button>
         </div>
       )}
 
