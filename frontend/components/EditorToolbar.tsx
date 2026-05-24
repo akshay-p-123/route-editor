@@ -23,7 +23,6 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
     originalStops,
     savedRouteId,
     activeRerouteId,
-    setActiveRerouteId,
     isDirty,
     isValid,
     validationErrors,

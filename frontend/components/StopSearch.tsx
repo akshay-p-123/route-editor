@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { mtd, type StopSearchResult } from "@/lib/api";
 import { useEditorStore } from "@/store/editorStore";
 import { Input } from "@/components/ui/input";
