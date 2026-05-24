@@ -522,14 +522,14 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
             <button
               onClick={() => handleStopClick(stop.stop_id ?? id)}
               title={stop.stop_name}
-              className="rounded-full border-2 border-white shadow-md transition-transform hover:scale-110 focus:outline-none cursor-grab active:cursor-grabbing"
+              className="rounded-full transition-transform hover:scale-110 focus:outline-none cursor-grab active:cursor-grabbing"
               style={{
                 width: isSelected ? 18 : 14,
                 height: isSelected ? 18 : 14,
                 backgroundColor: color,
-                borderWidth: isSelected ? 3 : 2,
+                border: "2px solid #ffffff",
                 boxShadow: isSelected
-                  ? `0 0 0 3px ${color}44`
+                  ? `0 0 0 3px ${color}, 0 2px 8px rgba(0,0,0,0.35)`
                   : "0 1px 3px rgba(0,0,0,0.3)",
               }}
             />
