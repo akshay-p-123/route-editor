@@ -172,7 +172,7 @@ def _render_png(html: str, width: int, height: int) -> bytes:
     """Runs Playwright synchronously in a thread — avoids Windows asyncio
     subprocess limitations with the SelectorEventLoop."""
     with sync_playwright() as pw:
-        browser = pw.chromium.launch()
+        browser = pw.chromium.launch(args=["--no-sandbox", "--disable-setuid-sandbox"])
         page = browser.new_page(viewport={"width": width, "height": height})
         page.set_content(html, wait_until="domcontentloaded")
         page.wait_for_selector("[data-ready='true']", timeout=20000)

@@ -21,4 +21,5 @@ jobs:
             git pull origin main
             source venv/bin/activate
             pip install -r backend/requirements.txt
+            playwright install chromium --with-deps
             sudo systemctl restart route-editor-api
