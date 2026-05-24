@@ -2,17 +2,32 @@
 
 A web tool for planning and communicating bus route changes for Champaign-Urbana's Mass Transit District (MTD). Planners can modify existing routes, build new ones from scratch, group changes under a named reroute, and export a rider-facing PNG showing exactly what changed.
 
+<img width="1906" height="990" alt="image" src="https://github.com/user-attachments/assets/16dce09d-8385-4a5c-b7ec-5a650515cbc6" />
+
 ---
 
 ## Usage
 
-To edit an existing MTD route, find it in the left sidebar by route group and select a direction. The stop list loads on the right and the route appears on the map. Drag stops to reorder them, click the X to remove one, hover and click the pencil icon to replace a stop with a different one, or use the search bar at the bottom to append new stops. Click Save in the toolbar to persist the edit. If you are not signed in, you can still explore and edit but nothing will be saved.
+To edit an existing MTD route, find it in the left sidebar by route group and select a direction. The stop list loads on the right and the route appears on the map. Drag stops to reorder them, click the X to remove one, hover and click the pencil icon to replace a stop with a different one, or use the search bar at the bottom to append new stops. Alternatively, you can click a stop you want to move and nearby stops will be suggested. Click Save in the toolbar to persist the edit. If you are not signed in, you can still explore and edit but nothing will be saved.
 
-To build a route from scratch, click New in the sidebar, fill in a name and optional color, then add stops in sequence using the search bar.
+<img width="1897" height="915" alt="image" src="https://github.com/user-attachments/assets/7577cf2c-b3a6-4d2d-b50c-5e4942aa53e3" />
+
+To build a route from scratch, click New in the sidebar, fill in a name and optional color, then add stops in sequence using the search bar. Visual stop suggestions also work here, but for stop creation, not modification.
+
+<img width="653" height="498" alt="image" src="https://github.com/user-attachments/assets/4a4dff0e-5441-4ad4-ad8e-204881cfb88f" />
+<img width="970" height="598" alt="image" src="https://github.com/user-attachments/assets/c10bd181-d724-4a1d-b740-1aeb21ce9c5a" />
+
+
 
 To group related edits under a named detour or service change, open the Reroutes panel from the top navigation. Create a reroute, then use the route picker inside that reroute's card to load an MTD route directly into the editor with the reroute context already set. Saving from there attaches the modified route to the reroute automatically.
 
+<img width="928" height="858" alt="image" src="https://github.com/user-attachments/assets/49b7799c-7dcc-4ec2-b9a9-7f064af76c1f" />
+
+
 Once an edit is complete, click Export PNG to download a map image showing what changed. The image is suitable for posting to rider communications or service alerts.
+
+
+<img width="1200" height="800" alt="route-12-reroute(2)" src="https://github.com/user-attachments/assets/ffa9d2aa-7e2f-47d9-bc5b-dd50441477aa" />
 
 ---
 
@@ -73,6 +88,20 @@ Map tiles: CARTO Positron (no API key)
 Transit data: MTD API v3 at api.mtd.dev
 
 ---
+
+## Known Issues
+
+- Hopper routes are not yet supported, nor are the many variants an MTD route can have (such as Green)
+- PNG export is still somewhat dubious
+- I've tested route editing/creation quite a bit, but there are definitely still small problems with it
+- Small UI bugs
+
+## Planned improvements
+
+- The ability to add new stops (not just from MTD)
+- UI/UX that aligns more closely with something like Transit
+- Long-term, adapting this into a tool that any transit agency can use
+
 
 ## Architecture notes
 
