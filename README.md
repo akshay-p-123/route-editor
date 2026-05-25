@@ -15,13 +15,13 @@ To edit an existing MTD route, find it in the left sidebar by route group and se
 To build a route from scratch, click New in the sidebar, fill in a name and optional color, then add stops in sequence using the search bar. Visual stop suggestions also work here, but for stop creation, not modification.
 
 <img width="653" height="498" alt="image" src="https://github.com/user-attachments/assets/4a4dff0e-5441-4ad4-ad8e-204881cfb88f" />
-<img width="970" height="598" alt="image" src="https://github.com/user-attachments/assets/c10bd181-d724-4a1d-b740-1aeb21ce9c5a" />
+<img width="647" height="399" alt="image" src="https://github.com/user-attachments/assets/c10bd181-d724-4a1d-b740-1aeb21ce9c5a" />
 
 
 
 To group related edits under a named detour or service change, open the Reroutes panel from the top navigation. Create a reroute, then use the route picker inside that reroute's card to load an MTD route directly into the editor with the reroute context already set. Saving from there attaches the modified route to the reroute automatically.
 
-<img width="928" height="858" alt="image" src="https://github.com/user-attachments/assets/49b7799c-7dcc-4ec2-b9a9-7f064af76c1f" />
+<img width="619" height="572" alt="image" src="https://github.com/user-attachments/assets/49b7799c-7dcc-4ec2-b9a9-7f064af76c1f" />
 
 
 Once an edit is complete, click Export PNG to download a map image showing what changed. The image is suitable for posting to rider communications or service alerts.
