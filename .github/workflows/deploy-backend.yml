@@ -19,6 +19,6 @@ jobs:
           script: |
             cd /opt/route-editor
             git pull origin main
-            source venv/bin/activate
+            source backend/venv/bin/activate
             pip install -r backend/requirements.txt
             sudo systemctl restart route-editor-api
