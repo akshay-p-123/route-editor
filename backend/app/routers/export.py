@@ -3,8 +3,9 @@
 import asyncio
 import io
 import logging
-from typing import Tuple
+from typing import Optional, Tuple
 
+import requests
 import s2sphere
 import staticmaps
 from fastapi import APIRouter
@@ -16,7 +17,8 @@ router = APIRouter(prefix="/export", tags=["export"])
 
 _CARTO_POSITRON = staticmaps.TileProvider(
     name="carto-positron",
-    url_pattern="https://basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png",
+    url_pattern="https://$s.basemaps.cartocdn.com/light_all/$z/$x/$y.png",
+    shards=["a", "b", "c", "d"],
     attribution="© OpenStreetMap contributors © CARTO",
     max_zoom=19,
 )
@@ -79,6 +81,31 @@ class ExportRequest(BaseModel):
     height: int = 800
 
 
+def _osrm_coords(stops: list[StopPoint]) -> Optional[list[s2sphere.LatLng]]:
+    coord_str = ";".join(f"{s.lon},{s.lat}" for s in stops)
+    try:
+        resp = requests.get(
+            f"https://router.project-osrm.org/route/v1/driving/{coord_str}",
+            params={"overview": "full", "geometries": "geojson"},
+            timeout=10,
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        if data.get("code") != "Ok":
+            return None
+        return [
+            staticmaps.create_latlng(lat, lon)
+            for lon, lat in data["routes"][0]["geometry"]["coordinates"]
+        ]
+    except Exception:
+        logger.warning("OSRM request failed, falling back to straight lines")
+        return None
+
+
+def _straight_coords(stops: list[StopPoint]) -> list[s2sphere.LatLng]:
+    return [staticmaps.create_latlng(s.lat, s.lon) for s in stops]
+
+
 def _render_png(body: ExportRequest) -> bytes:
     ctx = staticmaps.Context()
     ctx.set_tile_provider(_CARTO_POSITRON)
@@ -87,15 +114,17 @@ def _render_png(body: ExportRequest) -> bytes:
     mod = body.modified_stops
 
     if len(orig) >= 2:
+        coords = _osrm_coords(orig) or _straight_coords(orig)
         ctx.add_object(staticmaps.Line(
-            [staticmaps.create_latlng(s.lat, s.lon) for s in orig],
+            coords,
             color=staticmaps.parse_color("#aaaaaa"),
             width=3,
         ))
 
     if len(mod) >= 2:
+        coords = _osrm_coords(mod) or _straight_coords(mod)
         ctx.add_object(staticmaps.Line(
-            [staticmaps.create_latlng(s.lat, s.lon) for s in mod],
+            coords,
             color=staticmaps.parse_color(body.route_color),
             width=5,
         ))
