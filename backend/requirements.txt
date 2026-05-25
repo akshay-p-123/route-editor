@@ -5,4 +5,6 @@ supabase>=2.7.0
 python-dotenv>=1.0.0
 pydantic>=2.7.0
 pydantic-settings>=2.3.0
-playwright>=1.45.0
+py-staticmaps>=0.4.0
+s2sphere>=0.2.5
+Pillow>=10.0.0

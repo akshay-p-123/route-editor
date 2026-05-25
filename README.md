@@ -63,13 +63,11 @@ The editor runs live validation on the stop list and displays inline warnings an
 
 ### PNG export
 
-The Export PNG button generates a static map image suitable for sharing with riders. The backend builds a self-contained HTML page, loads it in a headless Chromium browser via Playwright, waits for the map to finish rendering, and returns a screenshot. The image shows:
+The Export PNG button generates a static map image suitable for sharing with riders. The backend renders it server-side using staticmaps and Pillow against CARTO raster tiles. The image shows:
 
-- The original route in grey dashed lines
+- The original route in grey
 - The modified route in the route's brand color
 - Green circles for added stops, red for removed stops, grey for unchanged stops
-
-Route lines are snapped to actual roads using the public OSRM routing API, with straight-line fallback if the request fails.
 
 ### Map navigation
 
@@ -81,9 +79,11 @@ The map uses CARTO Positron tiles with no API key required. A "Back to Champaign
 
 Frontend: Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui, Zustand, TanStack Query, react-map-gl with MapLibre GL JS, dnd-kit
 
-Backend: FastAPI (Python), Supabase (Postgres + Auth), Playwright
+Backend: FastAPI (Python), Supabase (Postgres + Auth), staticmaps, Pillow
 
 Map tiles: CARTO Positron (no API key)
+
+Routing: OSRM public API (road-snapping for the interactive map)
 
 Transit data: MTD API v3 at api.mtd.dev
 

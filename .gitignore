@@ -4,3 +4,4 @@ supabase_schema.sql
 docker-compose.yml
 supabase
 handoff.md
+.vscode
