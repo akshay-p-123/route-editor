@@ -459,6 +459,15 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         </div>
       )}
 
+      {exporting && (
+        <div className="h-0.5 overflow-hidden bg-gray-200">
+          <div
+            className="h-full w-[35%] bg-blue-500"
+            style={{ animation: "indeterminate 1.2s linear infinite" }}
+          />
+        </div>
+      )}
+
       {showSaveNameDialog && (
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
           <div className="bg-background rounded-lg shadow-xl p-6 w-80 space-y-4">

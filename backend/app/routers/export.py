@@ -20,9 +20,15 @@ os.makedirs(_TILE_CACHE_DIR, exist_ok=True)
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/export", tags=["export"])
 
-_CARTO_POSITRON = staticmaps.TileProvider(
-    name="carto-positron",
-    url_pattern="https://$s.basemaps.cartocdn.com/light_all/$z/$x/$y.png",
+class _RetinaProvider(staticmaps.TileProvider):
+    @staticmethod
+    def tile_size() -> int:
+        return 512
+
+
+_CARTO_POSITRON = _RetinaProvider(
+    name="carto-positron-2x",
+    url_pattern="https://$s.basemaps.cartocdn.com/light_all/$z/$x/$y@2x.png",
     shards=["a", "b", "c", "d"],
     attribution="© OpenStreetMap contributors © CARTO",
     max_zoom=19,
@@ -82,8 +88,8 @@ class ExportRequest(BaseModel):
     original_stops: list[StopPoint]
     modified_stops: list[StopPoint]
     route_color: str = "#009B77"
-    width: int = 1200
-    height: int = 800
+    width: int = 2400
+    height: int = 1600
 
 
 _MAX_OSRM_WAYPOINTS = 12
