@@ -17,8 +17,11 @@ jobs:
           username: ${{ secrets.DROPLET_USER }}
           key: ${{ secrets.DROPLET_SSH_KEY }}
           script: |
+            set -eo pipefail
             cd /opt/route-editor
             git pull origin main
             source backend/venv/bin/activate
             pip install -r backend/requirements.txt
             sudo systemctl restart route-editor-api
+            sleep 3
+            sudo systemctl is-active --quiet route-editor-api || { sudo journalctl -u route-editor-api -n 20 --no-pager; exit 1; }
