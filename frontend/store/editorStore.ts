@@ -255,8 +255,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
   },
 
   markSaved(id) {
-    const stops = get().stops;
-    set({ savedRouteId: id, isDirty: false, shapeId: null, originalStops: stops });
+    const { isCustom, stops } = get();
+    set({
+      savedRouteId: id,
+      isDirty: false,
+      shapeId: null,
+      ...(isCustom ? { originalStops: stops.map((s) => ({ ...s })) } : {}),
+    });
   },
 
   reset() {

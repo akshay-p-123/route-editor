@@ -3,6 +3,8 @@
 import asyncio
 import io
 import logging
+import os
+import tempfile
 from typing import Optional, Tuple
 
 import requests
@@ -11,6 +13,9 @@ import staticmaps
 from fastapi import APIRouter
 from fastapi.responses import Response
 from pydantic import BaseModel
+
+_TILE_CACHE_DIR = os.path.join(tempfile.gettempdir(), "route-editor-tiles")
+os.makedirs(_TILE_CACHE_DIR, exist_ok=True)
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/export", tags=["export"])
@@ -81,8 +86,19 @@ class ExportRequest(BaseModel):
     height: int = 800
 
 
+_MAX_OSRM_WAYPOINTS = 12
+
+
+def _sample_stops(stops: list[StopPoint], max_points: int) -> list[StopPoint]:
+    """Return up to max_points evenly-spaced stops, always keeping first and last."""
+    if len(stops) <= max_points:
+        return stops
+    indices = [round(i * (len(stops) - 1) / (max_points - 1)) for i in range(max_points)]
+    return [stops[i] for i in indices]
+
+
 def _osrm_coords(stops: list[StopPoint]) -> Optional[list[s2sphere.LatLng]]:
-    coord_str = ";".join(f"{s.lon},{s.lat}" for s in stops)
+    coord_str = ";".join(f"{s.lon},{s.lat}" for s in _sample_stops(stops, _MAX_OSRM_WAYPOINTS))
     try:
         resp = requests.get(
             f"https://router.project-osrm.org/route/v1/driving/{coord_str}",
@@ -106,15 +122,26 @@ def _straight_coords(stops: list[StopPoint]) -> list[s2sphere.LatLng]:
     return [staticmaps.create_latlng(s.lat, s.lon) for s in stops]
 
 
-def _render_png(body: ExportRequest) -> bytes:
+async def _osrm_coords_async(stops: list[StopPoint]) -> Optional[list[s2sphere.LatLng]]:
+    if len(stops) < 2:
+        return None
+    return await asyncio.to_thread(_osrm_coords, stops)
+
+
+def _render_png(
+    body: ExportRequest,
+    orig_coords: Optional[list[s2sphere.LatLng]],
+    mod_coords: Optional[list[s2sphere.LatLng]],
+) -> bytes:
     ctx = staticmaps.Context()
     ctx.set_tile_provider(_CARTO_POSITRON)
+    ctx.set_cache_dir(_TILE_CACHE_DIR)
 
     orig = body.original_stops
     mod = body.modified_stops
 
     if len(orig) >= 2:
-        coords = _osrm_coords(orig) or _straight_coords(orig)
+        coords = orig_coords or _straight_coords(orig)
         ctx.add_object(staticmaps.Line(
             coords,
             color=staticmaps.parse_color("#aaaaaa"),
@@ -122,7 +149,7 @@ def _render_png(body: ExportRequest) -> bytes:
         ))
 
     if len(mod) >= 2:
-        coords = _osrm_coords(mod) or _straight_coords(mod)
+        coords = mod_coords or _straight_coords(mod)
         ctx.add_object(staticmaps.Line(
             coords,
             color=staticmaps.parse_color(body.route_color),
@@ -156,7 +183,11 @@ def _render_png(body: ExportRequest) -> bytes:
 
 @router.post("/png")
 async def export_png(body: ExportRequest):
-    png = await asyncio.to_thread(_render_png, body)
+    orig_coords, mod_coords = await asyncio.gather(
+        _osrm_coords_async(body.original_stops),
+        _osrm_coords_async(body.modified_stops),
+    )
+    png = await asyncio.to_thread(_render_png, body, orig_coords, mod_coords)
     return Response(
         content=png,
         media_type="image/png",
