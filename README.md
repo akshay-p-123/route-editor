@@ -92,7 +92,7 @@ Transit data: MTD API v3 at api.mtd.dev
 ## Known Issues
 
 - Hopper routes are not yet supported, nor are the many variants an MTD route can have (such as Green)
-- PNG export is still somewhat dubious
+- PNG export is still somewhat dubious -- quality isn't perfect after switching from Playwright
 - I've tested route editing/creation quite a bit, but there are definitely still small problems with it
 - Small UI bugs
 
