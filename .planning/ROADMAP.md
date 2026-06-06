@@ -12,7 +12,7 @@ This milestone adds GTFS capabilities to the existing FastAPI backend: ingest MT
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: GTFS Static Ingestion** - Backend loads and refreshes MTD's GTFS feed; Docker image builds with GDAL
+- [x] **Phase 1: GTFS Static Ingestion** - Backend loads and refreshes MTD's GTFS feed; Docker image builds with GDAL (completed 2026-06-06)
 - [ ] **Phase 2: GTFS Export** - User can download a spec-compliant GTFS zip for saved routes from the editor
 - [ ] **Phase 3: Trip Update Integration** - Backend fetches, caches, and exposes GTFS-RT delay data for stops
 - [ ] **Phase 4: Trip Modifications Round-Trip** - User can import a TripModifications feed into the editor and export a saved reroute as a TripModifications protobuf
@@ -31,7 +31,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   3. Any API call made while the GTFS feed is still loading returns HTTP 503 with a descriptive error message
   4. GTFS feed refreshes automatically in the background every 6-12 hours without restarting the process or causing downtime
 **Plans**: 1 plan
-  - [ ] 01-01-PLAN.md — GTFS ingestion walking skeleton: Docker+GDAL, startup load, in-memory feed, background refresh, 503 guard, /api/gtfs/status
+  - [x] 01-01-PLAN.md — GTFS ingestion walking skeleton: Docker+GDAL, startup load, in-memory feed, background refresh, 503 guard, /api/gtfs/status
 
 ### Phase 2: GTFS Export
 **Goal**: User can trigger a GTFS static zip download from the editor for one or more saved routes, and the exported zip passes MobilityData gtfs-validator without errors
@@ -90,7 +90,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. GTFS Static Ingestion | 0/1 | Not started | - |
+| 1. GTFS Static Ingestion | 1/1 | Complete   | 2026-06-06 |
 | 2. GTFS Export | 0/TBD | Not started | - |
 | 3. Trip Update Integration | 0/TBD | Not started | - |
 | 4. Trip Modifications Round-Trip | 0/TBD | Not started | - |
