@@ -65,7 +65,7 @@ completed: "2026-06-06"
 - **Duration:** 2 min
 - **Started:** 2026-06-06T00:20:36Z
 - **Completed:** 2026-06-06T00:22:42Z
-- **Tasks:** 3 automated (Task 4 is checkpoint:human-verify, awaiting user)
+- **Tasks:** 4 (Tasks 1-3 automated, Task 4 human-verify: approved)
 - **Files modified:** 6
 
 ## Accomplishments
@@ -83,7 +83,7 @@ Each task was committed atomically:
 2. **Task 2: Create GTFS service — load function, GtfsFeed dataclass, background refresh loop** - `3178694` (feat)
 3. **Task 3: Create GTFS router with 503 guard + status endpoint, wire lifespan + router into main.py** - `2e9d986` (feat)
 
-Task 4 (human-verify) is paused pending user verification.
+Task 4 (human-verify) approved by user: Docker build succeeds with GDAL/gtfs-kit, 503 guard confirmed during startup, /api/gtfs/status returns non-zero counts after load, endpoint reachable via Next.js BFF.
 
 ## Files Created/Modified
 - `backend/app/services/gtfs.py` - GtfsFeed dataclass, load_gtfs_feed(), load_and_store(app), _refresh_loop(app)
@@ -117,7 +117,7 @@ The `GTFS_FEED_URL` and `GTFS_REFRESH_INTERVAL_HOURS` env vars have defaults in 
 
 ## Next Phase Readiness
 - `app.state.gtfs_feed` singleton is established — all downstream phases (02-gtfs-export, 03-gtfs-rt, 04-trip-modifications, 05-estimation) can inject `feed: GtfsFeed = Depends(get_gtfs_feed)` and receive a guaranteed-loaded feed or a 503
-- Task 4 (human-verify) must be completed by the user before this plan is marked fully done: Docker build must succeed, 503 guard must fire during startup, /api/gtfs/status must return non-zero counts, and the endpoint must be reachable via the frontend BFF
+- Task 4 (human-verify) approved — Walking Skeleton confirmed end-to-end
 
 ---
 *Phase: 01-gtfs-static-ingestion*
