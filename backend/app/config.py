@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_service_role_key: str
     cors_origins: list[str] = ["http://localhost:3000"]
+    gtfs_feed_url: str = "https://mtd.dev/gtfs.zip"
+    gtfs_refresh_interval_hours: int = 6
 
     class Config:
         env_file = ".env"
