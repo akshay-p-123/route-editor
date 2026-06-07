@@ -192,6 +192,15 @@ export async function exportPng(payload: ExportPayload): Promise<Blob> {
   return res.blob();
 }
 
+/** Download a GTFS static zip for a reroute package. */
+export async function exportGtfs(rerouteId: string, token: string): Promise<Blob> {
+  const res = await fetch(`${BASE}/api/gtfs/export/${rerouteId}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) throw new Error(`GTFS export failed: ${res.statusText}`);
+  return res.blob();
+}
+
 // ── MTD v3 Types ──────────────────────────────────────────────────────────────
 
 /** Standard v3 response envelope. */

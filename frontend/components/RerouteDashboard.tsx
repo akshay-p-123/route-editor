@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { reroutes, savedRoutes as savedRoutesApi, mtd, exportPng, type Reroute, type RouteGroup, type ExportPayload } from "@/lib/api";
+import { reroutes, savedRoutes as savedRoutesApi, mtd, exportPng, exportGtfs, type Reroute, type RouteGroup, type ExportPayload } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 import { useEditorStore } from "@/store/editorStore";
 import type { EditorStop } from "@/store/editorStore";
@@ -11,7 +11,7 @@ import { buildStopMap } from "@/lib/stopUtils";
 import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, Loader2, LogIn, Pencil } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, FileArchive, Loader2, LogIn, Pencil } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
 
 interface RerouteDashboardProps {
@@ -27,6 +27,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
   const [authLoaded, setAuthLoaded] = useState(false);
 
   const [exportingRerouteId, setExportingRerouteId] = useState<string | null>(null);
+  const [exportingGtfsRerouteId, setExportingGtfsRerouteId] = useState<string | null>(null);
   const [editingRerouteId, setEditingRerouteId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
@@ -244,6 +245,24 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     }
   }
 
+  async function handleExportGtfs(reroute: Reroute) {
+    if (!token || !reroute.saved_routes?.length) return;
+    setExportingGtfsRerouteId(reroute.id);
+    try {
+      const blob = await exportGtfs(reroute.id, token);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${reroute.name.replace(/[^\w\s\-().]/g, "_")}-gtfs.zip`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("GTFS export failed:", err);
+    } finally {
+      setExportingGtfsRerouteId(null);
+    }
+  }
+
   async function handleOpenInEditor(rerouteId: string | null) {
     if (!pickGroup || !pickDir) return;
     setPickLoading(true);
@@ -419,6 +438,18 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                       title="Rename"
                     >
                       <Pencil className="w-3.5 h-3.5" />
+                    </button>
+
+                    <button
+                      onClick={() => void handleExportGtfs(reroute)}
+                      disabled={exportingGtfsRerouteId === reroute.id || !reroute.saved_routes?.length}
+                      title={!reroute.saved_routes?.length ? "No routes to export" : "Export GTFS zip"}
+                      aria-label={exportingGtfsRerouteId === reroute.id ? "Exporting GTFS…" : "Export GTFS zip"}
+                      className="text-muted-foreground hover:text-foreground shrink-0 disabled:opacity-40"
+                    >
+                      {exportingGtfsRerouteId === reroute.id
+                        ? <Loader2 className="w-4 h-4 animate-spin" />
+                        : <FileArchive className="w-4 h-4" />}
                     </button>
 
                     <button
