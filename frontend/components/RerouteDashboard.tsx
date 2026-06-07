@@ -11,6 +11,7 @@ import { buildStopMap } from "@/lib/stopUtils";
 import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, FileArchive, Loader2, LogIn, Pencil } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
 
@@ -336,31 +337,37 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
               <div>
                 <h4 className="text-sm font-medium mb-3">Edit a route</h4>
                 <div className="flex flex-col gap-2">
-                  <select
-                    className="text-sm border rounded px-2 py-1.5 bg-background"
-                    value={pickGroup?.id ?? ""}
-                    onChange={(e) => {
-                      const g = routeGroups.find((r) => r.id === e.target.value) ?? null;
+                  <Select
+                    value={pickGroup?.id ?? undefined}
+                    onValueChange={(v) => {
+                      const g = routeGroups.find((r) => r.id === v) ?? null;
                       setPickGroup(g);
                       setPickDir(null);
                     }}
                   >
-                    <option value="">Select route…</option>
-                    {routeGroups.map((g) => (
-                      <option key={g.id} value={g.id ?? ""}>{g.routeGroupName}</option>
-                    ))}
-                  </select>
-                  {pickGroup && (
-                    <select
-                      className="text-sm border rounded px-2 py-1.5 bg-background"
-                      value={pickDir ?? ""}
-                      onChange={(e) => setPickDir(e.target.value || null)}
-                    >
-                      <option value="">Select direction…</option>
-                      {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
-                        <option key={d.name} value={d.name}>{d.name}</option>
+                    <SelectTrigger size="sm" className="w-full">
+                      <SelectValue placeholder="Select route…" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {routeGroups.map((g) => (
+                        <SelectItem key={g.id} value={g.id ?? ""}>{g.routeGroupName}</SelectItem>
                       ))}
-                    </select>
+                    </SelectContent>
+                  </Select>
+                  {pickGroup && (
+                    <Select
+                      value={pickDir ?? undefined}
+                      onValueChange={(v) => setPickDir(v || null)}
+                    >
+                      <SelectTrigger size="sm" className="w-full">
+                        <SelectValue placeholder="Select direction…" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
+                          <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
                   )}
                   <Button
                     size="sm"
@@ -512,32 +519,38 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                       <div className="border-t pt-4">
                         <h4 className="text-sm font-medium mb-2">Edit a route in this reroute</h4>
                         <div className="flex flex-col gap-2">
-                          <select
-                            className="text-sm border rounded px-2 py-1.5 bg-background"
-                            value={pickGroup?.id ?? ""}
-                            onChange={(e) => {
-                              const g = routeGroups.find((r) => r.id === e.target.value) ?? null;
+                          <Select
+                            value={pickGroup?.id ?? undefined}
+                            onValueChange={(v) => {
+                              const g = routeGroups.find((r) => r.id === v) ?? null;
                               setPickGroup(g);
                               setPickDir(null);
                             }}
                           >
-                            <option value="">Select route…</option>
-                            {routeGroups.map((g) => (
-                              <option key={g.id} value={g.id ?? ""}>{g.routeGroupName}</option>
-                            ))}
-                          </select>
+                            <SelectTrigger size="sm" className="w-full">
+                              <SelectValue placeholder="Select route…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {routeGroups.map((g) => (
+                                <SelectItem key={g.id} value={g.id ?? ""}>{g.routeGroupName}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
 
                           {pickGroup && (
-                            <select
-                              className="text-sm border rounded px-2 py-1.5 bg-background"
-                              value={pickDir ?? ""}
-                              onChange={(e) => setPickDir(e.target.value || null)}
+                            <Select
+                              value={pickDir ?? undefined}
+                              onValueChange={(v) => setPickDir(v || null)}
                             >
-                              <option value="">Select direction…</option>
-                              {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
-                                <option key={d.name} value={d.name}>{d.name}</option>
-                              ))}
-                            </select>
+                              <SelectTrigger size="sm" className="w-full">
+                                <SelectValue placeholder="Select direction…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
+                                  <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
                           )}
 
                           <Button

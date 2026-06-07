@@ -265,11 +265,16 @@ def _build_feed_info_df(start_date: str, end_date: str) -> pd.DataFrame:
 def _build_agency_df(gtfs_feed) -> pd.DataFrame:
     """Build GTFS agency.txt DataFrame.
 
-    If gtfs_feed is available and has an agency DataFrame, use it (real MTD values).
+    If gtfs_feed is available and has an agency DataFrame, use it (real MTD values)
+    but override agency_id to "MTD" so it matches the hardcoded value in routes.txt.
+    Single-agency GTFS feeds often omit agency_id — forcing it here prevents the
+    routes.txt → agency.txt FK violation caught by the MobilityData validator.
     Otherwise hard-code D-09 MTD values.
     """
     if gtfs_feed is not None and getattr(gtfs_feed.feed, "agency", None) is not None:
-        return gtfs_feed.feed.agency
+        df = gtfs_feed.feed.agency.copy()
+        df["agency_id"] = "MTD"
+        return df
     return pd.DataFrame([{
         "agency_id": "MTD",
         "agency_name": "Champaign-Urbana Mass Transit District",
