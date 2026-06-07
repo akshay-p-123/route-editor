@@ -23,9 +23,6 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
   const [expandedRerouteId, setExpandedRerouteId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const [token, setToken] = useState<string | null>(null);
-  const [authLoaded, setAuthLoaded] = useState(false);
-
   const [exportingRerouteId, setExportingRerouteId] = useState<string | null>(null);
   const [exportingGtfsRerouteId, setExportingGtfsRerouteId] = useState<string | null>(null);
   const [editingRerouteId, setEditingRerouteId] = useState<string | null>(null);
@@ -42,18 +39,19 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
     setPickDir(null);
   }, [expandedRerouteId]);
 
-  // Get token
-  useQuery({
+  // Derive token and authLoaded from query state — side-effect setState inside queryFn
+  // misses cache-hit re-mounts (queryFn never re-runs, authLoaded stays false forever).
+  const { data: tokenData, status: authStatus } = useQuery({
     queryKey: ["auth-token"],
     queryFn: async () => {
       const supabase = createClient();
       const { data: { session } } = await supabase.auth.getSession();
-      const t = session?.access_token ?? null;
-      setToken(t);
-      setAuthLoaded(true);
-      return t;
+      return session?.access_token ?? null;
     },
   });
+
+  const token = tokenData ?? null;
+  const authLoaded = authStatus !== "pending";
 
   const isGuest = authLoaded && !token;
 
