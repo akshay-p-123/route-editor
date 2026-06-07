@@ -10,6 +10,7 @@ import zipfile
 import io
 import asyncio
 import pytest
+from unittest.mock import AsyncMock, MagicMock, patch
 
 # Try to import builders. ImportError is expected (RED) until Task 2 is done.
 try:
@@ -219,3 +220,102 @@ def test_feed_info():
     assert row["feed_end_date"] == today
     assert "feed_version" in feed_info_df.columns, "feed_version column missing"
     assert row["feed_version"] != "", "feed_version should not be empty"
+
+
+# ── EXPORT-01 + T-02-01: Endpoint tests ──────────────────────────────────────
+
+@_requires_builders
+def test_export_endpoint(sample_reroute, sample_saved_routes):
+    """EXPORT-01: GET /api/gtfs/export/{reroute_id} returns 200, application/zip, 8-file zip.
+
+    Monkeypatches _client, _user_id, and _osrm_route to avoid network/DB calls.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    reroute_id = sample_reroute["id"]
+    user_id = sample_reroute["user_id"]
+    reroute_name = sample_reroute["name"]
+
+    # Mock Supabase client: reroutes returns sample_reroute, saved_routes returns sample_saved_routes
+    mock_client = MagicMock()
+
+    def _from_side_effect(table_name):
+        mock = MagicMock()
+        if table_name == "reroutes":
+            mock.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [sample_reroute]
+        elif table_name == "saved_routes":
+            mock.select.return_value.eq.return_value.execute.return_value.data = sample_saved_routes
+        return mock
+
+    mock_client.from_.side_effect = _from_side_effect
+
+    with (
+        patch("app.routers.gtfs._client", return_value=mock_client),
+        patch("app.routers.gtfs._user_id", return_value=user_id),
+        patch("app.routers.gtfs._osrm_route", new=AsyncMock(return_value=None)),  # force fallback, no network
+    ):
+        # Ensure app.state.gtfs_feed is None (no GTFS ingestion needed for export)
+        app.state.gtfs_feed = None
+
+        client = TestClient(app, raise_server_exceptions=True)
+        response = client.get(
+            f"/api/gtfs/export/{reroute_id}",
+            headers={"Authorization": "Bearer fake-token"},
+        )
+
+    assert response.status_code == 200, f"Expected 200, got {response.status_code}: {response.text}"
+    assert response.headers["content-type"] == "application/zip", (
+        f"Expected application/zip, got {response.headers.get('content-type')}"
+    )
+    content_disposition = response.headers.get("content-disposition", "")
+    assert reroute_name.replace(" ", "_") in content_disposition, (
+        f"Reroute name not in Content-Disposition: {content_disposition}"
+    )
+
+    # Verify zip contains all 8 required GTFS files
+    with zipfile.ZipFile(io.BytesIO(response.content)) as zf:
+        namelist = zf.namelist()
+
+    expected = {
+        "agency.txt", "routes.txt", "trips.txt", "stops.txt",
+        "stop_times.txt", "shapes.txt", "calendar_dates.txt", "feed_info.txt",
+    }
+    assert set(namelist) == expected, f"Unexpected zip contents: {namelist}"
+
+
+@_requires_builders
+def test_export_ownership(sample_reroute):
+    """T-02-01: GET /api/gtfs/export/{reroute_id} for a non-owned reroute returns 404.
+
+    Ownership check: mock reroutes query returns empty data to simulate wrong user.
+    """
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    reroute_id = sample_reroute["id"]
+    user_id = sample_reroute["user_id"]
+
+    # Mock returns empty data — simulates reroute not owned by this user
+    mock_client = MagicMock()
+
+    def _from_side_effect(table_name):
+        mock = MagicMock()
+        if table_name == "reroutes":
+            mock.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
+        return mock
+
+    mock_client.from_.side_effect = _from_side_effect
+
+    with (
+        patch("app.routers.gtfs._client", return_value=mock_client),
+        patch("app.routers.gtfs._user_id", return_value=user_id),
+    ):
+        app.state.gtfs_feed = None
+        client = TestClient(app, raise_server_exceptions=True)
+        response = client.get(
+            f"/api/gtfs/export/{reroute_id}",
+            headers={"Authorization": "Bearer fake-token"},
+        )
+
+    assert response.status_code == 404, f"Expected 404 for non-owned reroute, got {response.status_code}"
