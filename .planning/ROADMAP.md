@@ -45,7 +45,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Exported route_color values have no # prefix; shape coordinates are in lat/lon order (not swapped from OSRM GeoJSON); stop_times include arrival/departure for all stops with timepoint=0 placeholders
   5. The exported zip passes MobilityData gtfs-validator with no ERROR-level violations (warnings acceptable)
 **Plans**: 3 plans
-  - [ ] 02-01-PLAN.md — Backend GTFS export endpoint: 8-DataFrame builders, OSRM timing+geometry, ownership-guarded GET /api/gtfs/export/{reroute_id}, pytest scaffold
+  - [x] 02-01-PLAN.md — Backend GTFS export endpoint: 8-DataFrame builders, OSRM timing+geometry, ownership-guarded GET /api/gtfs/export/{reroute_id}, pytest scaffold
   - [ ] 02-02-PLAN.md — Frontend slice: exportGtfs api helper + FileArchive download button in RerouteDashboard
   - [ ] 02-03-PLAN.md — gtfs-validator compliance pass (0 ERRORs) + regression tests + end-to-end browser human-verify
 
@@ -93,7 +93,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. GTFS Static Ingestion | 1/1 | Complete   | 2026-06-06 |
-| 2. GTFS Export | 0/3 | Not started | - |
+| 2. GTFS Export | 1/3 | In Progress|  |
 | 3. Trip Update Integration | 0/TBD | Not started | - |
 | 4. Trip Modifications Round-Trip | 0/TBD | Not started | - |
 | 5. Reroute Travel-Time Estimation | 0/TBD | Not started | - |
