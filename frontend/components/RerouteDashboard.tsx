@@ -406,7 +406,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
 
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
-      <div className="bg-background rounded-lg shadow-lg w-full max-w-2xl mx-4 h-[80vh] flex flex-col">
+      <div className="bg-background rounded-lg shadow-lg w-full max-w-2xl mx-4 h-[80vh] flex flex-col overflow-hidden">
         {/* ── Header ───────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <h2 className="text-lg font-semibold">Reroutes</h2>
@@ -428,7 +428,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
         )}
 
         {/* ── Scrollable content ───────────────────────────────────────────── */}
-        <ScrollArea className="flex-1">
+        <ScrollArea className="flex-1 min-h-0">
           <div className="p-6 space-y-4">
             {isGuest ? (
               <div>
