@@ -10,6 +10,7 @@ import asyncio
 import time
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+from fastapi import Header
 
 # Try to import trip-update functions. ImportError is expected (RED) until Tasks 2-3 are done.
 try:
@@ -174,7 +175,6 @@ def test_cache_miss_fetches(monkeypatch):
     """First call for a stop set invokes the fetch path and stores result in _dep_cache."""
     from fastapi.testclient import TestClient
     from app.main import app
-    from fastapi import HTTPException
 
     # Clear cache before test
     monkeypatch.setattr(gtfs_module, "_dep_cache", {})
@@ -190,16 +190,18 @@ def test_cache_miss_fetches(monkeypatch):
         "error": None,
     }
 
-    with (
-        patch("app.routers.gtfs._user_id", return_value="user-test-id"),
-        patch("app.routers.gtfs.get_stop_departures", new=AsyncMock(return_value=good_response)) as mock_fetch,
-    ):
-        client = TestClient(app, raise_server_exceptions=True)
-        response = client.get(
-            "/api/gtfs/trip-updates",
-            params={"stop_ids": "stp_A"},
-            headers={"Authorization": "Bearer fake-token"},
-        )
+    # Use FastAPI dependency_overrides for Depends(_user_id)
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-test-id"
+    try:
+        with patch("app.routers.gtfs.get_stop_departures", new=AsyncMock(return_value=good_response)) as mock_fetch:
+            client = TestClient(app, raise_server_exceptions=True)
+            response = client.get(
+                "/api/gtfs/trip-updates",
+                params={"stop_ids": "stp_A"},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
     assert response.status_code == 200
     assert mock_fetch.called, "get_stop_departures should have been called on cache miss"
@@ -223,16 +225,18 @@ def test_cache_hit_no_refetch(monkeypatch):
         {"stp_A,stp_B": (cached_delays, fresh_ts)},
     )
 
-    with (
-        patch("app.routers.gtfs._user_id", return_value="user-test-id"),
-        patch("app.routers.gtfs.get_stop_departures", new=AsyncMock()) as mock_fetch,
-    ):
-        client = TestClient(app, raise_server_exceptions=True)
-        response = client.get(
-            "/api/gtfs/trip-updates",
-            params={"stop_ids": "stp_A,stp_B"},
-            headers={"Authorization": "Bearer fake-token"},
-        )
+    # Use FastAPI dependency_overrides for Depends(_user_id)
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-test-id"
+    try:
+        with patch("app.routers.gtfs.get_stop_departures", new=AsyncMock()) as mock_fetch:
+            client = TestClient(app, raise_server_exceptions=True)
+            response = client.get(
+                "/api/gtfs/trip-updates",
+                params={"stop_ids": "stp_A,stp_B"},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
     assert response.status_code == 200
     assert not mock_fetch.called, "get_stop_departures should NOT be called on cache hit"
@@ -254,17 +258,19 @@ def test_cache_key_sorted(monkeypatch):
         {"stp_A,stp_B": (cached_delays, fresh_ts)},
     )
 
-    with (
-        patch("app.routers.gtfs._user_id", return_value="user-test-id"),
-        patch("app.routers.gtfs.get_stop_departures", new=AsyncMock()) as mock_fetch,
-    ):
-        client = TestClient(app, raise_server_exceptions=True)
-        # Request with reversed order
-        response = client.get(
-            "/api/gtfs/trip-updates",
-            params={"stop_ids": "stp_B,stp_A"},
-            headers={"Authorization": "Bearer fake-token"},
-        )
+    # Use FastAPI dependency_overrides for Depends(_user_id)
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-test-id"
+    try:
+        with patch("app.routers.gtfs.get_stop_departures", new=AsyncMock()) as mock_fetch:
+            client = TestClient(app, raise_server_exceptions=True)
+            # Request with reversed order
+            response = client.get(
+                "/api/gtfs/trip-updates",
+                params={"stop_ids": "stp_B,stp_A"},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
     assert response.status_code == 200, f"Expected 200, got {response.status_code}"
     assert not mock_fetch.called, "Cache key must be order-independent; fetch should not occur"
@@ -279,7 +285,9 @@ def test_empty_stop_ids_400():
     from fastapi.testclient import TestClient
     from app.main import app
 
-    with patch("app.routers.gtfs._user_id", return_value="user-test-id"):
+    # Use FastAPI dependency_overrides for Depends(_user_id)
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-test-id"
+    try:
         client = TestClient(app, raise_server_exceptions=True)
 
         # Empty string
@@ -297,6 +305,8 @@ def test_empty_stop_ids_400():
             headers={"Authorization": "Bearer fake-token"},
         )
         assert response.status_code == 400, f"Expected 400 for whitespace stop_ids, got {response.status_code}"
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
 
 @_requires_impl
@@ -306,10 +316,12 @@ def test_unauthenticated_401():
     from fastapi import HTTPException
     from app.main import app
 
-    with patch(
-        "app.routers.gtfs._user_id",
-        side_effect=HTTPException(status_code=401, detail="Invalid token"),
-    ):
+    # Override _user_id to raise 401 — simulates invalid/missing token
+    def _raise_401(authorization: str = Header(...)):
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    app.dependency_overrides[gtfs_module._user_id] = _raise_401
+    try:
         client = TestClient(app, raise_server_exceptions=False)
         response = client.get(
             "/api/gtfs/trip-updates",
@@ -317,3 +329,5 @@ def test_unauthenticated_401():
             headers={"Authorization": "Bearer invalid-token"},
         )
         assert response.status_code == 401, f"Expected 401, got {response.status_code}"
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)

@@ -5,7 +5,8 @@ import logging
 import os
 import pathlib
 import tempfile
-from datetime import date, timedelta
+import time
+from datetime import date, datetime, timedelta
 from uuid import UUID
 
 import gtfs_kit
@@ -17,6 +18,7 @@ from supabase import create_client
 
 from app.config import settings
 from app.services import gtfs as gtfs_svc
+from app.services.mtd import get_stop_departures
 
 logger = logging.getLogger(__name__)
 
@@ -409,3 +411,101 @@ async def export_gtfs(
         media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+# ── Trip updates (RT-02, RT-03) ───────────────────────────────────────────────
+
+# Per-stop-set delay cache: key = sorted comma-joined stop_ids, value = (delays, timestamp)
+_dep_cache: dict[str, tuple[dict, float]] = {}
+_DEP_CACHE_TTL = 60  # seconds
+
+
+def _compute_delay(departure: dict) -> int | None:
+    """Compute delay_seconds for a single departure dict.
+
+    Returns:
+        None  — if scheduledDeparture is falsy (cannot compute baseline)
+        0     — if isRealTime is falsy or estimatedDeparture is falsy (on-time assumption)
+        int   — signed seconds (positive=late, negative=early) when isRealTime=True
+    """
+    scheduled = departure.get("scheduledDeparture")
+    if not scheduled:
+        return None
+
+    if not departure.get("isRealTime"):
+        return 0
+
+    estimated = departure.get("estimatedDeparture")
+    if not estimated:
+        return 0
+
+    return int(
+        datetime.fromisoformat(estimated).timestamp()
+        - datetime.fromisoformat(scheduled).timestamp()
+    )
+
+
+async def _get_delays_for_stops(stop_ids: list[str]) -> dict[str, int]:
+    """Fan out departure fetches for all stop_ids concurrently.
+
+    Uses asyncio.gather with return_exceptions=True so a single stop failure
+    does not abort the whole request — it is logged and omitted (warn-don't-crash).
+
+    Returns a partial dict: stops with no departure data or upstream errors are omitted.
+    """
+    results = await asyncio.gather(
+        *[get_stop_departures(sid) for sid in stop_ids],
+        return_exceptions=True,
+    )
+
+    delays: dict[str, int] = {}
+    for stop_id, result in zip(stop_ids, results):
+        if isinstance(result, Exception):
+            logger.warning("MTD departure fetch failed for %s: %s", stop_id, result)
+            continue
+
+        departures = result.get("result") or []
+        if not departures:
+            continue  # omit stops with no departure data (D-07)
+
+        # Filter to departures with a non-null scheduledDeparture, then sort by epoch (Pitfall 3)
+        valid = [d for d in departures if d.get("scheduledDeparture")]
+        if not valid:
+            continue
+
+        valid.sort(key=lambda d: datetime.fromisoformat(d["scheduledDeparture"]).timestamp())
+        soonest = valid[0]
+
+        delay = _compute_delay(soonest)
+        if delay is not None:
+            delays[stop_id] = delay
+
+    return delays
+
+
+@router.get("/trip-updates")
+async def get_trip_updates(
+    stop_ids: str,
+    user_id: str = Depends(_user_id),
+) -> dict[str, int]:
+    """Return per-stop delay seconds derived from MTD v3 real-time departures.
+
+    Response: flat dict[stop_id, delay_seconds] — positive=late, negative=early, 0=on-time.
+    Stops with no data or upstream errors are omitted (partial result).
+    Results are cached for 60 seconds keyed by the sorted stop_id set.
+    """
+    # Input validation (V5 ASVS)
+    ids = [sid.strip() for sid in stop_ids.split(",") if sid.strip()]
+    if not ids:
+        raise HTTPException(status_code=400, detail="stop_ids must not be empty")
+
+    # Order-independent cache key (Pitfall 1 — sorted to maximize hit rate)
+    cache_key = ",".join(sorted(ids))
+    if cache_key in _dep_cache:
+        cached_data, ts = _dep_cache[cache_key]
+        if time.time() - ts < _DEP_CACHE_TTL:
+            return cached_data
+
+    delays = await _get_delays_for_stops(ids)
+    _dep_cache[cache_key] = (delays, time.time())
+    return delays
