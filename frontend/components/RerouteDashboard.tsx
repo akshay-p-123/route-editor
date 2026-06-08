@@ -11,7 +11,6 @@ import { buildStopMap } from "@/lib/stopUtils";
 import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, FileArchive, Loader2, LogIn, Pencil } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
 
@@ -309,9 +308,18 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
   );
   const availableRoutes = allSavedRoutes.filter((r) => !routesInReroutes.has(r.id) && !r.reroute_id);
 
+  // The reroute that is currently expanded (for action panel context)
+  const activeReroute = expandedRerouteId
+    ? rerouteList.find((r) => r.id === expandedRerouteId) ?? null
+    : null;
+
+  // Show the action panel for guests (always) or when a reroute is expanded
+  const showActionPanel = isGuest || !!expandedRerouteId;
+
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center">
       <div className="bg-background rounded-lg shadow-lg w-full max-w-2xl mx-4 h-[80vh] flex flex-col">
+        {/* ── Header ───────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between px-6 py-4 border-b">
           <h2 className="text-lg font-semibold">Reroutes</h2>
           <button
@@ -331,53 +339,13 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
           </div>
         )}
 
+        {/* ── Reroute list (scrollable) ─────────────────────────────────── */}
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-4">
             {isGuest ? (
-              <div>
-                <h4 className="text-sm font-medium mb-3">Edit a route</h4>
-                <div className="flex flex-col gap-2">
-                  <Select
-                    value={pickGroup?.id ?? null}
-                    onValueChange={(v) => {
-                      const g = routeGroups.find((r) => r.id === v) ?? null;
-                      setPickGroup(g);
-                      setPickDir(null);
-                    }}
-                  >
-                    <SelectTrigger size="sm" className="w-full">
-                      <SelectValue placeholder="Select route…" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {routeGroups.map((g) => (
-                        <SelectItem key={g.id} value={g.id ?? ""}>{g.routeGroupName}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  {pickGroup && (
-                    <Select
-                      value={pickDir ?? null}
-                      onValueChange={(v) => setPickDir(v || null)}
-                    >
-                      <SelectTrigger size="sm" className="w-full">
-                        <SelectValue placeholder="Select direction…" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
-                          <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  )}
-                  <Button
-                    size="sm"
-                    disabled={!pickGroup || !pickDir || pickLoading}
-                    onClick={() => handleOpenInEditor(null)}
-                  >
-                    {pickLoading ? "Loading…" : "Open in editor"}
-                  </Button>
-                </div>
-              </div>
+              <p className="text-sm text-muted-foreground">
+                Sign in to create and manage reroutes. You can still open any route for editing below.
+              </p>
             ) : !authLoaded || isLoading ? (
               <p className="text-sm text-muted-foreground">Loading reroutes…</p>
             ) : rerouteList.length === 0 ? (
@@ -476,114 +444,41 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                     </button>
                   </div>
 
+                  {/* Expanded: show linked route edits only — picker moved to action panel */}
                   {expandedRerouteId === reroute.id && (
-                    <div className="mt-4 pt-4 border-t space-y-4">
-                      {/* Saved route edits in this reroute */}
-                      <div>
-                        <h4 className="text-sm font-medium mb-2">Route edits in this reroute</h4>
-                        {reroute.saved_routes && reroute.saved_routes.length > 0 ? (
-                          <div className="space-y-2">
-                            {reroute.saved_routes.map((route) => (
-                              <div
-                                key={route.id}
-                                className="flex items-center gap-2 bg-muted px-3 py-2 rounded text-sm"
-                              >
-                                <span className="flex-1">{route.name}</span>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => handleOpenReroute(reroute, route.id)}
-                                >
-                                  Open
-                                </Button>
-                                <Button
-                                  size="sm"
-                                  variant="ghost"
-                                  onClick={async () => {
-                                    if (!token) return;
-                                    await reroutes.removeRoute(reroute.id, route.id, token);
-                                    queryClient.invalidateQueries({ queryKey: ["reroutes"] });
-                                  }}
-                                >
-                                  Remove
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : (
-                          <p className="text-xs text-muted-foreground">No route edits yet</p>
-                        )}
-                      </div>
-
-                      {/* Edit a route directly from this reroute context */}
-                      <div className="border-t pt-4">
-                        <h4 className="text-sm font-medium mb-2">Edit a route in this reroute</h4>
-                        <div className="flex flex-col gap-2">
-                          <Select
-                            value={pickGroup?.id ?? null}
-                            onValueChange={(v) => {
-                              const g = routeGroups.find((r) => r.id === v) ?? null;
-                              setPickGroup(g);
-                              setPickDir(null);
-                            }}
-                          >
-                            <SelectTrigger size="sm" className="w-full">
-                              <SelectValue placeholder="Select route…" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {routeGroups.map((g) => (
-                                <SelectItem key={g.id} value={g.id ?? ""}>{g.routeGroupName}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-
-                          {pickGroup && (
-                            <Select
-                              value={pickDir ?? null}
-                              onValueChange={(v) => setPickDir(v || null)}
+                    <div className="mt-4 pt-4 border-t">
+                      <h4 className="text-sm font-medium mb-2">Route edits in this reroute</h4>
+                      {reroute.saved_routes && reroute.saved_routes.length > 0 ? (
+                        <div className="space-y-2">
+                          {reroute.saved_routes.map((route) => (
+                            <div
+                              key={route.id}
+                              className="flex items-center gap-2 bg-muted px-3 py-2 rounded text-sm"
                             >
-                              <SelectTrigger size="sm" className="w-full">
-                                <SelectValue placeholder="Select direction…" />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
-                                  <SelectItem key={d.name} value={d.name}>{d.name}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          )}
-
-                          <Button
-                            size="sm"
-                            disabled={!pickGroup || !pickDir || pickLoading}
-                            onClick={() => handleOpenInEditor(reroute.id)}
-                          >
-                            {pickLoading ? "Loading…" : "Open in editor"}
-                          </Button>
-                        </div>
-                      </div>
-
-                      {/* Link an existing permanent edit to this reroute */}
-                      {availableRoutes.length > 0 && (
-                        <div className="border-t pt-4">
-                          <h4 className="text-sm font-medium mb-2">Link a saved edit</h4>
-                          <div className="space-y-1 max-h-32 overflow-y-auto">
-                            {availableRoutes.map((route) => (
-                              <button
-                                key={route.id}
+                              <span className="flex-1">{route.name}</span>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleOpenReroute(reroute, route.id)}
+                              >
+                                Open
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="ghost"
                                 onClick={async () => {
                                   if (!token) return;
-                                  await reroutes.addRoute(reroute.id, route.id, token);
+                                  await reroutes.removeRoute(reroute.id, route.id, token);
                                   queryClient.invalidateQueries({ queryKey: ["reroutes"] });
-                                  queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
                                 }}
-                                className="w-full text-left px-3 py-2 text-sm hover:bg-muted rounded transition-colors"
                               >
-                                {route.name}
-                              </button>
-                            ))}
-                          </div>
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
                         </div>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">No route edits yet</p>
                       )}
                     </div>
                   )}
@@ -593,6 +488,75 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
           </div>
         </ScrollArea>
 
+        {/* ── Action panel — OUTSIDE ScrollArea so native <select> renders correctly ── */}
+        {showActionPanel && (
+          <div className="border-t px-6 py-4 space-y-3 bg-background">
+            <div>
+              <h4 className="text-sm font-medium mb-2">
+                {activeReroute ? `Edit a route in "${activeReroute.name}"` : "Edit a route"}
+              </h4>
+              <div className="flex flex-col gap-2">
+                <select
+                  className="text-sm border rounded px-2 py-1.5 bg-background w-full"
+                  value={pickGroup?.id ?? ""}
+                  onChange={(e) => {
+                    const g = routeGroups.find((r) => r.id === e.target.value) ?? null;
+                    setPickGroup(g);
+                    setPickDir(null);
+                  }}
+                >
+                  <option value="">Select route…</option>
+                  {routeGroups.map((g) => (
+                    <option key={g.id} value={g.id ?? ""}>{g.routeGroupName}</option>
+                  ))}
+                </select>
+                {pickGroup && (
+                  <select
+                    className="text-sm border rounded px-2 py-1.5 bg-background w-full"
+                    value={pickDir ?? ""}
+                    onChange={(e) => setPickDir(e.target.value || null)}
+                  >
+                    <option value="">Select direction…</option>
+                    {(directionsByGroup.get(pickGroup.id ?? "") ?? []).map((d) => (
+                      <option key={d.name} value={d.name}>{d.name}</option>
+                    ))}
+                  </select>
+                )}
+                <Button
+                  size="sm"
+                  disabled={!pickGroup || !pickDir || pickLoading}
+                  onClick={() => handleOpenInEditor(activeReroute?.id ?? null)}
+                >
+                  {pickLoading ? "Loading…" : "Open in editor"}
+                </Button>
+              </div>
+            </div>
+
+            {activeReroute && availableRoutes.length > 0 && (
+              <div className="border-t pt-3">
+                <h4 className="text-sm font-medium mb-2">Link a saved edit</h4>
+                <div className="space-y-1 max-h-24 overflow-y-auto">
+                  {availableRoutes.map((route) => (
+                    <button
+                      key={route.id}
+                      onClick={async () => {
+                        if (!token) return;
+                        await reroutes.addRoute(activeReroute.id, route.id, token);
+                        queryClient.invalidateQueries({ queryKey: ["reroutes"] });
+                        queryClient.invalidateQueries({ queryKey: ["saved-routes"] });
+                      }}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-muted rounded transition-colors"
+                    >
+                      {route.name}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ── Footer ───────────────────────────────────────────────────── */}
         {!isGuest && (
           <div className="px-6 py-4 border-t">
             <Button onClick={() => setShowNewReroute(true)} className="w-full">
