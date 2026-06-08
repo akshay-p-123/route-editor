@@ -13,7 +13,7 @@ This milestone adds GTFS capabilities to the existing FastAPI backend: ingest MT
 Decimal phases appear between their surrounding integers in numeric order.
 
 - [x] **Phase 1: GTFS Static Ingestion** - Backend loads and refreshes MTD's GTFS feed; Docker image builds with GDAL (completed 2026-06-06)
-- [ ] **Phase 2: GTFS Export** - User can download a spec-compliant GTFS zip for saved routes from the editor
+- [x] **Phase 2: GTFS Export** - User can download a spec-compliant GTFS zip for saved routes from the editor (completed 2026-06-08)
 - [ ] **Phase 3: Trip Update Integration** - Backend fetches, caches, and exposes GTFS-RT delay data for stops
 - [ ] **Phase 4: Trip Modifications Round-Trip** - User can import a TripModifications feed into the editor and export a saved reroute as a TripModifications protobuf
 - [ ] **Phase 5: Reroute Travel-Time Estimation** - Editor displays per-stop arrival delta for proposed stop sequence changes
@@ -46,19 +46,21 @@ Decimal phases appear between their surrounding integers in numeric order.
   5. The exported zip passes MobilityData gtfs-validator with no ERROR-level violations (warnings acceptable)
 **Plans**: 3 plans
   - [x] 02-01-PLAN.md — Backend GTFS export endpoint: 8-DataFrame builders, OSRM timing+geometry, ownership-guarded GET /api/gtfs/export/{reroute_id}, pytest scaffold
-  - [ ] 02-02-PLAN.md — Frontend slice: exportGtfs api helper + FileArchive download button in RerouteDashboard
-  - [ ] 02-03-PLAN.md — gtfs-validator compliance pass (0 ERRORs) + regression tests + end-to-end browser human-verify
+  - [x] 02-02-PLAN.md — Frontend slice: exportGtfs api helper + FileArchive download button in RerouteDashboard
+  - [x] 02-03-PLAN.md — gtfs-validator compliance pass (0 ERRORs) + regression tests + end-to-end browser human-verify
 
 ### Phase 3: Trip Update Integration
 **Goal**: Backend fetches the MTD GTFS-RT protobuf feed at most once per hour, caches the result in memory, and exposes an endpoint returning current per-stop delay values
 **Mode:** mvp
 **Depends on**: Phase 1
 **Requirements**: RT-01, RT-02, RT-03
+**Planning note (2026-06-08):** Per CONTEXT.md D-01/D-02, RT-01 (GTFS-RT protobuf feed via gtfs-realtime-bindings + hourly background refresh) is DEFERRED to Phase 4, where TripModifications requires the same protobuf infrastructure. Phase 3 delivers RT-02 + RT-03 using the MTD API v3 departures endpoint as the data source — same `/api/gtfs/trip-updates` response contract, demand-filled 60s cache instead of hourly polling. Success Criterion 1 below moves to Phase 4.
 **Success Criteria** (what must be TRUE):
-  1. Backend fetches the GTFS-RT feed from https://gtfs-rt.mtd.org/ using gtfs-realtime-bindings and never exceeds one fetch per hour regardless of request volume
+  1. (DEFERRED to Phase 4) Backend fetches the GTFS-RT feed from https://gtfs-rt.mtd.org/ using gtfs-realtime-bindings and never exceeds one fetch per hour regardless of request volume
   2. GET /api/gtfs/trip-updates?stop_ids=... returns current delay values (seconds early/late) for requested stops, served from the in-memory cache between refreshes
-  3. Backend queries MTD API v3 departure data for a given stop set and returns per-stop delay values in a GTFS-RT-shaped Pydantic response
-**Plans**: TBD
+  3. Backend queries MTD API v3 departure data for a given stop set and returns per-stop delay values in a GTFS-RT-shaped response
+**Plans**: 1 plan
+  - [ ] 03-01-PLAN.md — Trip-update vertical slice: get_stop_departures() (MTD v3, bypasses static cache) + authenticated GET /api/gtfs/trip-updates with 60s cache, soonest-departure delay computation, warn-don't-crash fan-out, full pytest suite
 
 ### Phase 4: Trip Modifications Round-Trip
 **Goal**: User can import a GTFS-RT TripModifications protobuf feed into the editor (replacement stops rendered on map, editable), and export an edited reroute as a TripModifications protobuf
@@ -93,7 +95,7 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. GTFS Static Ingestion | 1/1 | Complete   | 2026-06-06 |
-| 2. GTFS Export | 1/3 | In Progress|  |
-| 3. Trip Update Integration | 0/TBD | Not started | - |
+| 2. GTFS Export | 3/3 | Complete   | 2026-06-08 |
+| 3. Trip Update Integration | 0/1 | Not started | - |
 | 4. Trip Modifications Round-Trip | 0/TBD | Not started | - |
 | 5. Reroute Travel-Time Estimation | 0/TBD | Not started | - |
