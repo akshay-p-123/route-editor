@@ -338,7 +338,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                 <h4 className="text-sm font-medium mb-3">Edit a route</h4>
                 <div className="flex flex-col gap-2">
                   <Select
-                    value={pickGroup?.id ?? undefined}
+                    value={pickGroup?.id ?? null}
                     onValueChange={(v) => {
                       const g = routeGroups.find((r) => r.id === v) ?? null;
                       setPickGroup(g);
@@ -356,7 +356,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                   </Select>
                   {pickGroup && (
                     <Select
-                      value={pickDir ?? undefined}
+                      value={pickDir ?? null}
                       onValueChange={(v) => setPickDir(v || null)}
                     >
                       <SelectTrigger size="sm" className="w-full">
@@ -520,7 +520,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                         <h4 className="text-sm font-medium mb-2">Edit a route in this reroute</h4>
                         <div className="flex flex-col gap-2">
                           <Select
-                            value={pickGroup?.id ?? undefined}
+                            value={pickGroup?.id ?? null}
                             onValueChange={(v) => {
                               const g = routeGroups.find((r) => r.id === v) ?? null;
                               setPickGroup(g);
@@ -539,7 +539,7 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
 
                           {pickGroup && (
                             <Select
-                              value={pickDir ?? undefined}
+                              value={pickDir ?? null}
                               onValueChange={(v) => setPickDir(v || null)}
                             >
                               <SelectTrigger size="sm" className="w-full">
