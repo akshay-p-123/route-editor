@@ -7,7 +7,8 @@ In-memory TTL cache sits in front of the MTD API.
 MTD schedule data changes at most once per day, so a 1-hour TTL is safe for
 static data (routes, stops, trips). Shapes are essentially immutable between
 schedule releases, so they get a 24-hour TTL. Real-time endpoints (search,
-departures) bypass the cache entirely.
+departures) bypass the cache entirely; departures additionally use a 60-second
+_dep_cache TTL managed in the router layer.
 """
 
 import time
@@ -105,3 +106,15 @@ async def get_shape(shape_id: str) -> dict:
 
 async def get_shape_polyline(shape_id: str) -> dict:
     return _unwrap(await _get_cached(f"/shape/{shape_id}/polyline", ttl=86400))
+
+
+# ── Departures — real-time, 60s TTL ──────────────────────────────────────────
+
+async def get_stop_departures(stop_id: str) -> dict:
+    """Fetch real-time departures for a stop from MTD API v3.
+
+    Bypasses the static 1-hour TTL cache entirely — departure data is real-time
+    and must never be served from _get_cached. The router layer applies its own
+    60-second _dep_cache on the aggregated result.
+    """
+    return await _get(f"/stops/{stop_id}/departures")
