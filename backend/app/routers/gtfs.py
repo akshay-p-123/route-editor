@@ -425,6 +425,18 @@ _dep_cache: dict[str, tuple[dict, float]] = {}
 _DEP_CACHE_TTL = 60  # seconds
 
 
+def _evict_dep_cache() -> None:
+    """Remove all entries from _dep_cache whose TTL has expired.
+
+    Called at the start of each get_trip_updates request to prevent
+    unbounded growth of the in-memory cache.
+    """
+    now = time.time()
+    stale = [k for k, (_, ts) in _dep_cache.items() if now - ts >= _DEP_CACHE_TTL]
+    for k in stale:
+        del _dep_cache[k]
+
+
 def _parse_iso_ts(s: str) -> float:
     """Parse an ISO-8601 timestamp string and return a UTC epoch float.
 
@@ -514,6 +526,9 @@ async def get_trip_updates(
     Stops with no data or upstream errors are omitted (partial result).
     Results are cached for 60 seconds keyed by the sorted stop_id set.
     """
+    # Evict stale cache entries on every request to prevent unbounded growth
+    _evict_dep_cache()
+
     # Input validation (V5 ASVS)
     ids = [sid.strip() for sid in stop_ids.split(",") if sid.strip()]
     if not ids:
