@@ -41,24 +41,24 @@ def test_compute_delay():
     """isRealTime=True, estimated 2 minutes after scheduled → 120 seconds."""
     # Late case: +120s
     dep = {
-        "scheduledDeparture": "2026-06-08T14:30:00-05:00",
-        "estimatedDeparture": "2026-06-08T14:32:00-05:00",
+        "scheduledDeparture": "2026-06-08T19:30:00+00:00",
+        "estimatedDeparture": "2026-06-08T19:32:00+00:00",
         "isRealTime": True,
     }
     assert _compute_delay(dep) == 120
 
     # Early case: estimated before scheduled → negative
     dep_early = {
-        "scheduledDeparture": "2026-06-08T14:30:00-05:00",
-        "estimatedDeparture": "2026-06-08T14:29:00-05:00",
+        "scheduledDeparture": "2026-06-08T19:30:00+00:00",
+        "estimatedDeparture": "2026-06-08T19:29:00+00:00",
         "isRealTime": True,
     }
     assert _compute_delay(dep_early) == -60
 
     # Equal times → 0
     dep_equal = {
-        "scheduledDeparture": "2026-06-08T14:30:00-05:00",
-        "estimatedDeparture": "2026-06-08T14:30:00-05:00",
+        "scheduledDeparture": "2026-06-08T19:30:00+00:00",
+        "estimatedDeparture": "2026-06-08T19:30:00+00:00",
         "isRealTime": True,
     }
     assert _compute_delay(dep_equal) == 0
@@ -68,15 +68,15 @@ def test_compute_delay():
 def test_compute_delay_not_realtime():
     """isRealTime=False → return 0 regardless of timestamps (not computed)."""
     dep = {
-        "scheduledDeparture": "2026-06-08T14:30:00-05:00",
-        "estimatedDeparture": "2026-06-08T14:35:00-05:00",
+        "scheduledDeparture": "2026-06-08T19:30:00+00:00",
+        "estimatedDeparture": "2026-06-08T19:35:00+00:00",
         "isRealTime": False,
     }
     assert _compute_delay(dep) == 0
 
     # estimatedDeparture absent but isRealTime False → still 0
     dep_no_estimated = {
-        "scheduledDeparture": "2026-06-08T14:30:00-05:00",
+        "scheduledDeparture": "2026-06-08T19:30:00+00:00",
         "estimatedDeparture": None,
         "isRealTime": False,
     }
@@ -88,7 +88,7 @@ def test_compute_delay_no_scheduled():
     """scheduledDeparture=None → return None (cannot compute delay without baseline)."""
     dep = {
         "scheduledDeparture": None,
-        "estimatedDeparture": "2026-06-08T14:32:00-05:00",
+        "estimatedDeparture": "2026-06-08T19:32:00+00:00",
         "isRealTime": True,
     }
     assert _compute_delay(dep) is None
@@ -104,13 +104,13 @@ async def test_soonest_departure_selected():
     """
     departures = [
         {
-            "scheduledDeparture": "2026-06-08T15:00:00-05:00",  # later — ignore
-            "estimatedDeparture": "2026-06-08T15:10:00-05:00",
+            "scheduledDeparture": "2026-06-08T20:00:00+00:00",  # later — ignore
+            "estimatedDeparture": "2026-06-08T20:10:00+00:00",
             "isRealTime": True,
         },
         {
-            "scheduledDeparture": "2026-06-08T14:30:00-05:00",  # soonest — use this
-            "estimatedDeparture": "2026-06-08T14:33:00-05:00",
+            "scheduledDeparture": "2026-06-08T19:30:00+00:00",  # soonest — use this
+            "estimatedDeparture": "2026-06-08T19:33:00+00:00",
             "isRealTime": True,
         },
     ]
@@ -120,7 +120,7 @@ async def test_soonest_departure_selected():
     with patch("app.routers.gtfs.get_stop_departures", new=AsyncMock(return_value=mock_response)):
         result = await _get_delays_for_stops(["stp_A"])
 
-    # Soonest departure is 14:30 scheduled, 14:33 estimated → 180s delay
+    # Soonest departure is 19:30 UTC scheduled, 19:33 UTC estimated → 180s delay
     assert result == {"stp_A": 180}
 
 
@@ -130,8 +130,8 @@ async def test_per_stop_error_omitted():
     good_response = {
         "result": [
             {
-                "scheduledDeparture": "2026-06-08T14:30:00-05:00",
-                "estimatedDeparture": "2026-06-08T14:32:00-05:00",
+                "scheduledDeparture": "2026-06-08T19:30:00+00:00",
+                "estimatedDeparture": "2026-06-08T19:32:00+00:00",
                 "isRealTime": True,
             }
         ],
@@ -182,8 +182,8 @@ def test_cache_miss_fetches(monkeypatch):
     good_response = {
         "result": [
             {
-                "scheduledDeparture": "2026-06-08T14:30:00-05:00",
-                "estimatedDeparture": "2026-06-08T14:32:00-05:00",
+                "scheduledDeparture": "2026-06-08T19:30:00+00:00",
+                "estimatedDeparture": "2026-06-08T19:32:00+00:00",
                 "isRealTime": True,
             }
         ],

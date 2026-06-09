@@ -8,7 +8,6 @@ import re
 import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 from uuid import UUID
 
 import gtfs_kit
@@ -446,12 +445,12 @@ def _evict_dep_cache() -> None:
 def _parse_iso_ts(s: str) -> float:
     """Parse an ISO-8601 timestamp string and return a UTC epoch float.
 
-    If the string is timezone-naive (as MTD API sometimes returns), treat it
-    as America/Chicago so delay computations are not off by the UTC offset.
+    MTD API returns UTC with explicit +00:00 offset (e.g. "2026-04-08T18:23:00+00:00").
+    The naive fallback is defensive only — treat bare strings as UTC.
     """
     dt = datetime.fromisoformat(s)
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=ZoneInfo("America/Chicago"))
+        dt = dt.replace(tzinfo=timezone.utc)
     return dt.timestamp()
 
 
