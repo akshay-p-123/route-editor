@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     app.state.gtfs_feed = None
+    app.state.gtfs_rt_feed = None
     try:
         await asyncio.gather(
             mtd_svc.get_route_groups(),
@@ -23,9 +24,17 @@ async def lifespan(app: FastAPI):
         logger.info("Cache warmed (MTD + GTFS)")
     except Exception as exc:
         logger.warning("MTD cache warmup failed: %s", exc)
+    # RT-01: attempt initial GTFS-RT feed fetch (warn-don't-crash — leaves None on failure)
+    try:
+        app.state.gtfs_rt_feed = await gtfs_svc.load_gtfs_rt_feed()
+        logger.info("GTFS-RT feed loaded")
+    except Exception as exc:
+        logger.warning("Initial GTFS-RT feed fetch failed: %s", exc)
     task = asyncio.create_task(gtfs_svc._refresh_loop(app))
+    rt_task = asyncio.create_task(gtfs_svc._gtfs_rt_refresh_loop(app))
     yield
     task.cancel()
+    rt_task.cancel()
 
 
 app = FastAPI(title="MTD Route Editor API", version="0.1.0", lifespan=lifespan)
