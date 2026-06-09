@@ -7,7 +7,8 @@ import { savedRoutes, exportPng, type RoutePayload, type ExportPayload, type Rer
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw, Copy, Pencil } from "lucide-react";
+import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw, Copy, Pencil, FileInput } from "lucide-react";
+import TripModImportModal from "@/components/TripModImportModal";
 
 interface EditorToolbarProps {
   onAuthRequired: () => void;
@@ -56,6 +57,7 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
   const [saveName, setSaveName] = useState("");
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [renameName, setRenameName] = useState("");
+  const [showTripModImport, setShowTripModImport] = useState(false);
   const queryClient = useQueryClient();
 
   const hasRoute = !!selectedRouteGroup || isCustom;
@@ -373,6 +375,15 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
           <Button
             size="sm"
             variant="outline"
+            onClick={() => setShowTripModImport(true)}
+          >
+            <FileInput className="w-3.5 h-3.5 mr-1" />
+            Import TripMod
+          </Button>
+
+          <Button
+            size="sm"
+            variant="outline"
             onClick={undo}
             disabled={history.length === 0}
             title="Undo (Ctrl+Z)"
@@ -525,6 +536,10 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
             </div>
           </div>
         </div>
+      )}
+
+      {showTripModImport && (
+        <TripModImportModal onClose={() => setShowTripModImport(false)} />
       )}
     </div>
   );
