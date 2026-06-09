@@ -1,5 +1,6 @@
-"""Shared fixtures for GTFS export tests."""
+"""Shared fixtures for GTFS export and TripMod tests."""
 
+import pandas as pd
 import pytest
 from unittest.mock import MagicMock
 
@@ -99,3 +100,30 @@ def mock_supabase(sample_reroute, sample_saved_routes):
 
     client.from_.side_effect = _from_side_effect
     return client
+
+
+@pytest.fixture
+def mock_gtfs_feed():
+    """A MagicMock GtfsFeed whose .feed.stops is a small pandas DataFrame.
+
+    Contains rows for MTD_1001 and MTD_1002 using coordinates from sample_saved_routes.
+    Used by TripMod import tests that call _resolve_stop() against the static feed.
+    """
+    stops_df = pd.DataFrame([
+        {
+            "stop_id": "MTD_1001",
+            "stop_name": "Main & First",
+            "stop_lat": 40.1100,
+            "stop_lon": -88.2400,
+        },
+        {
+            "stop_id": "MTD_1002",
+            "stop_name": "Main & Second",
+            "stop_lat": 40.1110,
+            "stop_lon": -88.2410,
+        },
+    ])
+
+    feed = MagicMock()
+    feed.feed.stops = stops_df
+    return feed
