@@ -528,6 +528,138 @@ async def import_trip_modifications(
     return trips
 
 
+# ── TripMod export helpers ──────────────────────────────────────────────────
+
+def _build_trip_mod_feed(
+    reroute_id: str,
+    trip_id: str,
+    routes_with_stops: list[dict],
+    service_date: str | None = None,
+) -> "pb2.FeedMessage":
+    """Build a GTFS-RT TripModifications FeedMessage for a reroute package.
+
+    One entity per route in routes_with_stops (D-10). Each entity contains:
+    - selected_trips with the supplied trip_id
+    - service_dates set to [service_date or today's date]
+    - One Modification whose replacement_stops list has monotonically
+      non-decreasing travel_time_to_stop values (60s per stop, cumulative).
+    - start_stop_selector / end_stop_selector set to first/last effective stop IDs.
+
+    Effective stop ID: stop.get("stop_id") or synthetic custom_{route_id}_{seq}.
+    """
+    today = service_date or date.today().strftime("%Y%m%d")
+
+    out = pb2.FeedMessage()
+    out.header.gtfs_realtime_version = "2.0"
+    out.header.timestamp = int(time.time())
+
+    for route in routes_with_stops:
+        route_id = str(route["id"])
+        sorted_stops = sorted(route["route_stops"], key=lambda s: s["stop_sequence"])
+
+        # Build effective stop IDs (synthetic fallback)
+        effective_ids = []
+        for stop in sorted_stops:
+            raw_id = stop.get("stop_id") or None
+            eid = raw_id if raw_id else f"custom_{route_id}_{stop['stop_sequence']}"
+            effective_ids.append(eid)
+
+        entity = out.entity.add()
+        entity.id = route_id  # unique non-empty entity ID (Pitfall 4)
+
+        tm = entity.trip_modifications
+
+        # Service dates (Pitfall 6)
+        tm.service_dates.append(today)
+
+        # Selected trips
+        sel = tm.selected_trips.add()
+        sel.trip_ids.append(trip_id)
+
+        if not effective_ids:
+            continue
+
+        # One modification covering all replacement stops
+        mod = tm.modifications.add()
+        mod.start_stop_selector.stop_id = effective_ids[0]
+        mod.end_stop_selector.stop_id = effective_ids[-1]
+
+        # Replacement stops with cumulative 60s timing (Pitfall 3 — monotonic)
+        cumulative = 0
+        for eid in effective_ids:
+            rs = mod.replacement_stops.add()
+            rs.stop_id = eid
+            rs.travel_time_to_stop = cumulative
+            cumulative += 60
+
+    return out
+
+
+@router.get("/export/{reroute_id}/trip-modifications")
+async def export_trip_modifications(
+    reroute_id: UUID,
+    trip_id: str,
+    format: str = "pb",
+    user_id: str = Depends(_user_id),
+):
+    """Export a reroute package as a GTFS-RT TripModifications protobuf.
+
+    Builds one TripModifications entity per route in the package (D-10).
+    format=pb → binary application/x-protobuf; format=json → canonical protobuf JSON.
+    Any other format value → 400.
+
+    Auth: Supabase JWT required (T-4-08).
+    Ownership: reroute must belong to the authenticated user (T-4-06).
+    Filename sanitized to prevent Content-Disposition header injection (T-4-07).
+    """
+    if format not in ("pb", "json"):
+        raise HTTPException(status_code=400, detail="format must be pb or json")
+
+    client = _client()
+
+    # ── Ownership check ────────────────────────────────────────────────────
+    res = (
+        client.from_("reroutes")
+        .select("id, name, user_id")
+        .eq("id", str(reroute_id))
+        .eq("user_id", str(user_id))
+        .execute()
+    )
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Reroute not found")
+    reroute = res.data[0]
+
+    # ── Fetch routes with stops ────────────────────────────────────────────
+    routes_res = (
+        client.from_("saved_routes")
+        .select("*, route_stops(*)")
+        .eq("reroute_id", str(reroute_id))
+        .execute()
+    )
+    saved_routes = routes_res.data or []
+    if not saved_routes:
+        raise HTTPException(status_code=404, detail="No routes in reroute")
+
+    # ── Build feed ─────────────────────────────────────────────────────────
+    out = _build_trip_mod_feed(str(reroute_id), trip_id, saved_routes)
+
+    # ── Sanitize filename (T-4-07) ─────────────────────────────────────────
+    safe_name = re.sub(r'[^\w\-]', '_', reroute['name'])
+
+    if format == "pb":
+        return Response(
+            content=out.SerializeToString(),
+            media_type="application/x-protobuf",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}-tripmod.pb"'},
+        )
+    else:
+        return Response(
+            content=json_format.MessageToJson(out),
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{safe_name}-tripmod.json"'},
+        )
+
+
 # ── Export endpoint ──────────────────────────────────────────────────────────
 
 @router.get("/export/{reroute_id}")
