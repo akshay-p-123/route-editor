@@ -6,6 +6,13 @@ Plan 01 (Wave 0 scaffold):
   - test_import_503_when_rt_feed_none: PASSES after Plan 01 Task 2 (get_gtfs_rt_feed guard)
   - All other tests: SKIPPED until plans 02-03 implement _resolve_stop, _build_trip_mod_feed,
     _parse_trip_mod_feed (controlled by _requires flag).
+
+Plan 02 (this plan):
+  - test_parse_resolves_known_stop: PASSES after _resolve_stop implemented
+  - test_parse_skips_unknown_stop: PASSES after _resolve_stop implemented
+  - test_import_endpoint_200: PASSES after import_trip_modifications endpoint implemented
+  - test_import_bad_url_error: PASSES after 502 error handling implemented
+  - test_import_ssrf_blocked: PASSES after _validate_feed_url SSRF guard implemented
 """
 
 import asyncio
@@ -21,10 +28,11 @@ try:
         _resolve_stop,
         _build_trip_mod_feed,
         _parse_trip_mod_feed,
+        _validate_feed_url,
     )
     _AVAILABLE = True
 except ImportError:
-    _resolve_stop = _build_trip_mod_feed = _parse_trip_mod_feed = None  # type: ignore[assignment]
+    _resolve_stop = _build_trip_mod_feed = _parse_trip_mod_feed = _validate_feed_url = None  # type: ignore[assignment]
     _AVAILABLE = False
 
 _requires = pytest.mark.skipif(
@@ -122,7 +130,7 @@ async def test_import_503_when_rt_feed_none():
     assert "not yet" in exc_info.value.detail.lower() or "available" in exc_info.value.detail.lower()
 
 
-# ── Plan 02 stubs: TripMod import (skip-guarded) ─────────────────────────────
+# ── Plan 02: TripMod import tests ────────────────────────────────────────────
 
 @_requires
 def test_parse_resolves_known_stop(mock_gtfs_feed):
@@ -147,26 +155,114 @@ async def test_import_endpoint_200(mock_gtfs_feed):
     """POST /api/gtfs/trip-modifications/import returns 200 with a list of
     affected trip descriptors when given a valid feed URL.
     """
-    # Implemented in Plan 02
-    pass
+    from fastapi.testclient import TestClient
+    from app.main import app as fastapi_app
+
+    # Build a minimal TripModifications protobuf payload
+    feed = pb2.FeedMessage()
+    feed.header.gtfs_realtime_version = "2.0"
+    feed.header.timestamp = 1_700_000_000
+    entity = feed.entity.add()
+    entity.id = "e1"
+    sel = entity.trip_modifications.selected_trips.add()
+    sel.trip_ids.append("MTD_trip_99")
+    mod = entity.trip_modifications.modifications.add()
+    rs = mod.replacement_stops.add()
+    rs.stop_id = "MTD_1001"
+    rs.travel_time_to_stop = 120
+    raw = feed.SerializeToString()
+
+    # Mock httpx response with the protobuf binary
+    mock_response = MagicMock()
+    mock_response.content = raw
+    mock_response.raise_for_status = MagicMock()
+
+    mock_async_client = AsyncMock()
+    mock_async_client.__aenter__ = AsyncMock(return_value=mock_async_client)
+    mock_async_client.__aexit__ = AsyncMock(return_value=False)
+    mock_async_client.get = AsyncMock(return_value=mock_response)
+
+    # Mock auth — _user_id returns a test user ID
+    with patch("app.routers.gtfs._user_id", return_value="test-user-id"):
+        with patch("httpx.AsyncClient", return_value=mock_async_client):
+            with patch("app.routers.gtfs._validate_feed_url"):  # skip SSRF check for valid URL
+                # Set gtfs_feed on app state
+                fastapi_app.state.gtfs_feed = mock_gtfs_feed
+                fastapi_app.state.gtfs_rt_feed = None
+
+                client = TestClient(fastapi_app)
+                resp = client.post(
+                    "/api/gtfs/trip-modifications/import",
+                    json={"url": "https://example.com/tripmod.pb"},
+                    headers={"Authorization": "Bearer test-token"},
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert isinstance(data, list)
+                assert len(data) >= 1
+                assert data[0]["trip_id"] == "MTD_trip_99"
+                assert "stops" in data[0]
 
 
 @_requires
 async def test_import_bad_url_error():
-    """POST /api/gtfs/trip-modifications/import returns 422 or 400 when the
-    feed URL is malformed or unreachable.
-    """
-    # Implemented in Plan 02
-    pass
+    """POST /api/gtfs/trip-modifications/import returns 502 when the feed URL is unreachable."""
+    from fastapi.testclient import TestClient
+    from app.main import app as fastapi_app
+
+    # Mock httpx to raise a connection error
+    mock_async_client = AsyncMock()
+    mock_async_client.__aenter__ = AsyncMock(return_value=mock_async_client)
+    mock_async_client.__aexit__ = AsyncMock(return_value=False)
+    mock_async_client.get = AsyncMock(side_effect=Exception("Connection refused"))
+
+    with patch("app.routers.gtfs._user_id", return_value="test-user-id"):
+        with patch("httpx.AsyncClient", return_value=mock_async_client):
+            with patch("app.routers.gtfs._validate_feed_url"):  # skip SSRF check
+                fastapi_app.state.gtfs_feed = None
+                fastapi_app.state.gtfs_rt_feed = None
+
+                client = TestClient(fastapi_app, raise_server_exceptions=False)
+                resp = client.post(
+                    "/api/gtfs/trip-modifications/import",
+                    json={"url": "https://unreachable.example.com/tripmod.pb"},
+                    headers={"Authorization": "Bearer test-token"},
+                )
+                assert resp.status_code == 502
 
 
 @_requires
 async def test_import_ssrf_blocked():
-    """POST /api/gtfs/trip-modifications/import rejects private/loopback IPs
-    to prevent SSRF.
-    """
-    # Implemented in Plan 02
-    pass
+    """POST /api/gtfs/trip-modifications/import rejects private/loopback IPs to prevent SSRF."""
+    from fastapi import HTTPException
+
+    # Test localhost URL — should raise 400
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://localhost/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test loopback IP
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://127.0.0.1/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test private IP range
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://192.168.1.1/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test http:// (non-https)
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://example.com/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test file:// scheme
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("file:///etc/passwd")
+    assert exc_info.value.status_code == 400
+
+    # Valid https URL should NOT raise
+    _validate_feed_url("https://example.com/tripmod.pb")  # should not raise
 
 
 # ── Plan 03 stubs: TripMod export (skip-guarded) ─────────────────────────────
