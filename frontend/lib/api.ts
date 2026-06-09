@@ -212,6 +212,21 @@ export async function importTripMod(url: string, token: string): Promise<TripMod
   );
 }
 
+/** Download a GTFS-RT TripModifications feed for a reroute package as binary .pb or JSON. */
+export async function exportTripMod(
+  rerouteId: string,
+  tripId: string,
+  format: "pb" | "json",
+  token: string
+): Promise<Blob> {
+  const res = await fetch(
+    `${BASE}/api/gtfs/export/${encodeURIComponent(rerouteId)}/trip-modifications?trip_id=${encodeURIComponent(tripId)}&format=${format}`,
+    { headers: { Authorization: `Bearer ${token}` } }
+  );
+  if (!res.ok) throw new Error(`TripMod export failed: ${res.statusText}`);
+  return res.blob();
+}
+
 // ── MTD v3 Types ──────────────────────────────────────────────────────────────
 
 /** Standard v3 response envelope. */

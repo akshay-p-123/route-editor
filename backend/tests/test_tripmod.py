@@ -281,30 +281,76 @@ async def test_import_ssrf_blocked():
     _validate_feed_url("https://example.com/tripmod.pb")  # should not raise
 
 
-# ── Plan 03 stubs: TripMod export (skip-guarded) ─────────────────────────────
+# ── Plan 03: TripMod export tests ────────────────────────────────────────────
 
 @_requires_export
 async def test_export_round_trip_pb(sample_saved_routes, sample_reroute):
-    """GET /api/gtfs/export/{reroute_id}/trip-modifications?format=pb returns a
-    valid protobuf binary that parses back to a FeedMessage.
+    """_build_trip_mod_feed returns a FeedMessage; SerializeToString→ParseFromString
+    round-trips; the parsed entity's trip_ids contains the supplied trip_id;
+    there is one entity per route (D-10).
     """
-    # Implemented in Plan 03
-    pass
+    reroute_id = sample_reroute["id"]
+    trip_id = "MTD_trip_42"
+
+    feed = _build_trip_mod_feed(reroute_id, trip_id, sample_saved_routes)
+    assert feed is not None
+
+    # Round-trip via protobuf binary
+    raw = feed.SerializeToString()
+    assert len(raw) > 0
+
+    parsed = pb2.FeedMessage()
+    parsed.ParseFromString(raw)
+
+    # One entity per route (D-10)
+    assert len(parsed.entity) == len(sample_saved_routes)
+
+    # Every entity references the supplied trip_id in selected_trips
+    for entity in parsed.entity:
+        tm = entity.trip_modifications
+        all_trip_ids = [
+            tid
+            for sel in tm.selected_trips
+            for tid in sel.trip_ids
+        ]
+        assert trip_id in all_trip_ids
 
 
 @_requires_export
 async def test_export_json_format(sample_saved_routes, sample_reroute):
-    """GET /api/gtfs/export/{reroute_id}/trip-modifications?format=json returns
-    valid JSON that deserializes to a FeedMessage via json_format.
+    """json_format.MessageToJson of the built feed contains 'tripModifications'
+    and 'selectedTrips' (camelCase protobuf JSON keys).
     """
-    # Implemented in Plan 03
-    pass
+    import json
+    from google.protobuf import json_format
+
+    reroute_id = sample_reroute["id"]
+    trip_id = "MTD_trip_42"
+
+    feed = _build_trip_mod_feed(reroute_id, trip_id, sample_saved_routes)
+    json_str = json_format.MessageToJson(feed)
+    data = json.loads(json_str)
+
+    assert "entities" in data or "entity" in data  # protobuf JSON uses camelCase
+    assert "tripModifications" in json_str
+    assert "selectedTrips" in json_str
 
 
 @_requires_export
 async def test_travel_time_monotonic(sample_saved_routes, sample_reroute):
-    """TripMod export: travel_time_to_stop values are non-decreasing across
-    replacement_stops in each Modification.
+    """replacement_stops[].travel_time_to_stop is monotonically non-decreasing
+    across the stop sequence in each Modification.
     """
-    # Implemented in Plan 03
-    pass
+    reroute_id = sample_reroute["id"]
+    trip_id = "MTD_trip_monotonic"
+
+    feed = _build_trip_mod_feed(reroute_id, trip_id, sample_saved_routes)
+
+    for entity in feed.entity:
+        tm = entity.trip_modifications
+        for modification in tm.modifications:
+            times = [rs.travel_time_to_stop for rs in modification.replacement_stops]
+            for i in range(len(times) - 1):
+                assert times[i] <= times[i + 1], (
+                    f"travel_time_to_stop not monotonic at index {i}: {times}"
+                )
