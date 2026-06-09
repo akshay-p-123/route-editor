@@ -74,7 +74,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   4. Imported modification correctly resolves stop coordinates from the in-memory GTFS static feed (Phase 1 dependency)
 **Plans**: 4 plans
   - [x] 04-01-PLAN.md — Protobuf + RT-01 foundation: generate/commit gtfs_realtime_pb2.py, gtfs_rt_feed_url setting, hourly RT-01 background refresh (warn-don't-crash, once/hour cap), Wave 0 test scaffold
-  - [ ] 04-02-PLAN.md — TripMod import slice: POST /trip-modifications/import (parse + stop resolution + SSRF guard) + TripModImportModal + EditorToolbar button → editable custom route
+  - [x] 04-02-PLAN.md — TripMod import slice: POST /trip-modifications/import (parse + stop resolution + SSRF guard) + TripModImportModal + EditorToolbar button → editable custom route
   - [ ] 04-03-PLAN.md — TripMod export slice: GET /export/{reroute_id}/trip-modifications (.pb/.json, one entity per route) + exportTripMod client + RerouteDashboard export section
   - [ ] 04-04-PLAN.md — GTFS zip import slice (folded todo): POST /import (gtfs_kit.read_feed → reroute package, synthetic-id fallback, 422/413 guards) + Import GTFS footer button
 **UI hint**: yes
@@ -101,5 +101,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. GTFS Static Ingestion | 1/1 | Complete   | 2026-06-06 |
 | 2. GTFS Export | 3/3 | Complete   | 2026-06-08 |
 | 3. Trip Update Integration | 1/1 | Complete   | 2026-06-08 |
-| 4. Trip Modifications Round-Trip | 1/4 | In Progress|  |
+| 4. Trip Modifications Round-Trip | 2/4 | In Progress|  |
 | 5. Reroute Travel-Time Estimation | 0/TBD | Not started | - |
