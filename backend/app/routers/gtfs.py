@@ -1,13 +1,16 @@
 """GTFS feed status and metadata endpoints, plus GTFS static export and RT-01 guard."""
 
 import asyncio
+import ipaddress
 import logging
 import os
 import pathlib
 import re
+import socket
 import tempfile
 import time
 from datetime import date, datetime, timedelta, timezone
+from urllib.parse import urlparse
 from uuid import UUID
 
 import gtfs_kit
@@ -15,6 +18,8 @@ import httpx
 import pandas as pd
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response
+from google.protobuf import json_format
+from pydantic import BaseModel
 from supabase import create_client
 
 from app import gtfs_realtime_pb2 as pb2
@@ -327,6 +332,200 @@ async def _write_feed(feed: gtfs_kit.Feed) -> bytes:
             tmp_path.unlink(missing_ok=True)
 
     return await loop.run_in_executor(None, _sync_write)
+
+
+# ── TripMod import helpers ───────────────────────────────────────────────────
+
+# Private IP ranges used by _validate_feed_url SSRF guard
+_PRIVATE_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),       # loopback
+    ipaddress.ip_network("169.254.0.0/16"),    # link-local
+    ipaddress.ip_network("::1/128"),            # IPv6 loopback
+    ipaddress.ip_network("fc00::/7"),           # IPv6 unique local
+    ipaddress.ip_network("fe80::/10"),          # IPv6 link-local
+]
+
+
+def _validate_feed_url(url: str) -> None:
+    """Validate that a feed URL is safe to fetch (SSRF mitigation T-4-02).
+
+    Raises HTTPException(400) if:
+    - Scheme is not https (http://, file://, and others rejected)
+    - Host is localhost or resolves to loopback/private/link-local IP
+    """
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise HTTPException(status_code=400, detail="Invalid feed URL: only https:// is allowed")
+
+    host = parsed.hostname or ""
+    if not host:
+        raise HTTPException(status_code=400, detail="Invalid feed URL: missing host")
+
+    # Reject obvious localhost variants
+    if host.lower() in ("localhost", "localhost.localdomain"):
+        raise HTTPException(status_code=400, detail="Invalid feed URL: private or loopback host")
+
+    # Attempt DNS resolution and check the resolved IP
+    try:
+        addr_infos = socket.getaddrinfo(host, None)
+    except OSError:
+        # Cannot resolve — reject to be safe
+        raise HTTPException(status_code=400, detail="Invalid feed URL: host could not be resolved")
+
+    for addr_info in addr_infos:
+        ip_str = addr_info[4][0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            for network in _PRIVATE_NETWORKS:
+                if ip in network:
+                    raise HTTPException(
+                        status_code=400,
+                        detail="Invalid feed URL: private or loopback host",
+                    )
+        except ValueError:
+            continue
+
+
+def _resolve_stop(stop_id: str, feed) -> dict | None:
+    """Look up a stop in the in-memory static GTFS feed.
+
+    Returns a dict with stop_id, stop_name, stop_lat, stop_lon, or None if
+    the feed is None or the stop_id is not found.
+    """
+    if feed is None:
+        return None
+    try:
+        stops_df = feed.feed.stops
+        if stops_df is None or stops_df.empty:
+            return None
+        row = stops_df[stops_df["stop_id"] == stop_id]
+        if row.empty:
+            return None
+        r = row.iloc[0]
+        return {
+            "stop_id": str(r["stop_id"]),
+            "stop_name": str(r["stop_name"]),
+            "stop_lat": float(r["stop_lat"]),
+            "stop_lon": float(r["stop_lon"]),
+        }
+    except Exception:
+        return None
+
+
+async def _parse_trip_mod_feed(url: str, gtfs_feed) -> list[dict]:
+    """Fetch a GTFS-RT TripModifications protobuf from url and return parsed trips.
+
+    For each FeedEntity with trip_modifications:
+      - For each selected_trips entry, for each trip_id, collect replacement stops.
+      - Resolve stop coordinates from gtfs_feed via _resolve_stop.
+      - Falls back to proto-provided lat/lon when stop not in static feed (D-05).
+      - Skips unresolvable stops with no lat/lon and logs a warning.
+
+    Returns list of {trip_id, route_short_name, stops} dicts.
+    Never raises on per-stop resolution failures (warn-don't-crash).
+    May raise on HTTP fetch failure — caller wraps with HTTPException(502).
+    """
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+
+    msg = pb2.FeedMessage()
+    msg.ParseFromString(resp.content)
+
+    results: list[dict] = []
+    for entity in msg.entity:
+        if not entity.HasField("trip_modifications"):
+            continue
+        tm = entity.trip_modifications
+
+        # Collect all replacement stops across all modifications
+        replacement_stops: list[dict] = []
+        for modification in tm.modifications:
+            for rs in modification.replacement_stops:
+                stop_id = rs.stop_id if rs.stop_id else None
+                resolved = _resolve_stop(stop_id, gtfs_feed) if stop_id else None
+
+                if resolved:
+                    stop_entry = dict(resolved)
+                else:
+                    # Fall back to proto-provided lat/lon if present
+                    has_coords = (
+                        hasattr(rs, "stop") and rs.stop
+                        and hasattr(rs.stop, "lat") and rs.stop.lat
+                        and hasattr(rs.stop, "lon") and rs.stop.lon
+                    )
+                    if has_coords:
+                        stop_entry = {
+                            "stop_id": stop_id,
+                            "stop_name": stop_id or "Unknown Stop",
+                            "stop_lat": float(rs.stop.lat),
+                            "stop_lon": float(rs.stop.lon),
+                        }
+                    elif stop_id:
+                        logger.warning(
+                            "TripMod import: stop_id %r not in static feed and no lat/lon in proto — skipping",
+                            stop_id,
+                        )
+                        continue
+                    else:
+                        logger.warning("TripMod import: replacement stop has no stop_id and no lat/lon — skipping")
+                        continue
+
+                if rs.travel_time_to_stop:
+                    stop_entry["travel_time_to_stop"] = rs.travel_time_to_stop
+                replacement_stops.append(stop_entry)
+
+        # Each selected_trips entry can have multiple trip_ids
+        for sel in tm.selected_trips:
+            for trip_id in sel.trip_ids:
+                results.append({
+                    "trip_id": trip_id,
+                    "route_short_name": None,  # future: resolve from static feed routes/trips
+                    "stops": replacement_stops,
+                })
+
+    return results
+
+
+class _TripModImportBody(BaseModel):
+    url: str
+
+
+# ── TripMod import endpoint ─────────────────────────────────────────────────
+
+@router.post("/trip-modifications/import")
+async def import_trip_modifications(
+    body: _TripModImportBody,
+    request: Request,
+    user_id: str = Depends(_user_id),
+) -> list[dict]:
+    """Fetch and parse a user-supplied GTFS-RT TripModifications protobuf feed.
+
+    1. Validates the URL for SSRF (https-only, no private/loopback IPs).
+    2. Fetches the protobuf binary from the URL.
+    3. Parses TripModifications entities; resolves replacement stop coordinates
+       from the in-memory static GTFS feed.
+    4. Returns a list of {trip_id, route_short_name, stops[]} — one entry per
+       selected trip in the feed.
+
+    Auth: requires valid Supabase JWT (Depends(_user_id)).
+    SSRF: _validate_feed_url enforces https-only + no private IP (T-4-02).
+    Warn-don't-crash: unresolvable stops are skipped with a warning (D-05).
+    """
+    _validate_feed_url(body.url)
+
+    gtfs_feed = getattr(request.app.state, "gtfs_feed", None)
+
+    try:
+        trips = await _parse_trip_mod_feed(body.url, gtfs_feed)
+    except Exception as exc:
+        logger.warning("TripMod import fetch failed for %r: %s", body.url, exc)
+        raise HTTPException(status_code=502, detail="Could not fetch TripMod feed")
+
+    return trips
 
 
 # ── Export endpoint ──────────────────────────────────────────────────────────

@@ -6,6 +6,13 @@ Plan 01 (Wave 0 scaffold):
   - test_import_503_when_rt_feed_none: PASSES after Plan 01 Task 2 (get_gtfs_rt_feed guard)
   - All other tests: SKIPPED until plans 02-03 implement _resolve_stop, _build_trip_mod_feed,
     _parse_trip_mod_feed (controlled by _requires flag).
+
+Plan 02 (this plan):
+  - test_parse_resolves_known_stop: PASSES after _resolve_stop implemented
+  - test_parse_skips_unknown_stop: PASSES after _resolve_stop implemented
+  - test_import_endpoint_200: PASSES after import_trip_modifications endpoint implemented
+  - test_import_bad_url_error: PASSES after 502 error handling implemented
+  - test_import_ssrf_blocked: PASSES after _validate_feed_url SSRF guard implemented
 """
 
 import asyncio
@@ -16,20 +23,41 @@ from app import gtfs_realtime_pb2 as pb2
 
 # ── Conditional import guard for not-yet-implemented functions ────────────────
 
+# Plan 02 imports: _resolve_stop, _parse_trip_mod_feed, _validate_feed_url
 try:
     from app.routers.gtfs import (
         _resolve_stop,
-        _build_trip_mod_feed,
         _parse_trip_mod_feed,
+        _validate_feed_url,
     )
-    _AVAILABLE = True
+    _IMPORT_AVAILABLE = True
 except ImportError:
-    _resolve_stop = _build_trip_mod_feed = _parse_trip_mod_feed = None  # type: ignore[assignment]
-    _AVAILABLE = False
+    _resolve_stop = _parse_trip_mod_feed = _validate_feed_url = None  # type: ignore[assignment]
+    _IMPORT_AVAILABLE = False
+
+# Plan 03 imports: _build_trip_mod_feed (export function, not yet implemented)
+try:
+    from app.routers.gtfs import _build_trip_mod_feed  # noqa: F401
+    _EXPORT_AVAILABLE = True
+except ImportError:
+    _build_trip_mod_feed = None  # type: ignore[assignment]
+    _EXPORT_AVAILABLE = False
+
+# _requires: skip Plan 02+03 tests when neither is available
+_AVAILABLE = _IMPORT_AVAILABLE or _EXPORT_AVAILABLE
 
 _requires = pytest.mark.skipif(
     not _AVAILABLE,
     reason="TRIPMOD-02/05 functions not yet implemented (Plans 02-03)",
+)
+# Plan-specific skip guards
+_requires_import = pytest.mark.skipif(
+    not _IMPORT_AVAILABLE,
+    reason="TRIPMOD-02 import functions not yet implemented (Plan 02)",
+)
+_requires_export = pytest.mark.skipif(
+    not _EXPORT_AVAILABLE,
+    reason="TRIPMOD-05 export functions not yet implemented (Plan 03)",
 )
 
 
@@ -122,9 +150,9 @@ async def test_import_503_when_rt_feed_none():
     assert "not yet" in exc_info.value.detail.lower() or "available" in exc_info.value.detail.lower()
 
 
-# ── Plan 02 stubs: TripMod import (skip-guarded) ─────────────────────────────
+# ── Plan 02: TripMod import tests ────────────────────────────────────────────
 
-@_requires
+@_requires_import
 def test_parse_resolves_known_stop(mock_gtfs_feed):
     """_resolve_stop returns stop dict when stop_id exists in the static feed."""
     result = _resolve_stop("MTD_1001", mock_gtfs_feed)
@@ -135,43 +163,127 @@ def test_parse_resolves_known_stop(mock_gtfs_feed):
     assert "stop_name" in result
 
 
-@_requires
+@_requires_import
 def test_parse_skips_unknown_stop(mock_gtfs_feed):
     """_resolve_stop returns None for a stop_id not in the static feed."""
     result = _resolve_stop("UNKNOWN_999", mock_gtfs_feed)
     assert result is None
 
 
-@_requires
+@_requires_import
 async def test_import_endpoint_200(mock_gtfs_feed):
     """POST /api/gtfs/trip-modifications/import returns 200 with a list of
     affected trip descriptors when given a valid feed URL.
+
+    Tests _parse_trip_mod_feed directly to avoid TestClient + httpx mock complexity.
     """
-    # Implemented in Plan 02
-    pass
+    # Build a minimal TripModifications protobuf payload
+    feed = pb2.FeedMessage()
+    feed.header.gtfs_realtime_version = "2.0"
+    feed.header.timestamp = 1_700_000_000
+    entity = feed.entity.add()
+    entity.id = "e1"
+    sel = entity.trip_modifications.selected_trips.add()
+    sel.trip_ids.append("MTD_trip_99")
+    mod = entity.trip_modifications.modifications.add()
+    rs = mod.replacement_stops.add()
+    rs.stop_id = "MTD_1001"
+    rs.travel_time_to_stop = 120
+    raw = feed.SerializeToString()
+
+    # Mock httpx.AsyncClient to return the protobuf bytes
+    mock_response = MagicMock()
+    mock_response.content = raw
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client_instance = AsyncMock()
+    mock_client_instance.get = AsyncMock(return_value=mock_response)
+
+    # Mock the context manager
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_context.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.routers.gtfs.httpx.AsyncClient", return_value=mock_context):
+        result = await _parse_trip_mod_feed("https://example.com/tripmod.pb", mock_gtfs_feed)
+
+    assert isinstance(result, list)
+    assert len(result) >= 1
+    trip = result[0]
+    assert trip["trip_id"] == "MTD_trip_99"
+    assert "stops" in trip
+    # The stop MTD_1001 should be resolved from mock_gtfs_feed
+    assert len(trip["stops"]) == 1
+    assert trip["stops"][0]["stop_id"] == "MTD_1001"
+    assert trip["stops"][0]["travel_time_to_stop"] == 120
 
 
-@_requires
+@_requires_import
 async def test_import_bad_url_error():
-    """POST /api/gtfs/trip-modifications/import returns 422 or 400 when the
-    feed URL is malformed or unreachable.
-    """
-    # Implemented in Plan 02
-    pass
+    """_parse_trip_mod_feed raises when the URL is unreachable, endpoint returns 502."""
+    from fastapi import HTTPException
+    from app.routers.gtfs import import_trip_modifications, _TripModImportBody
+
+    # Mock httpx to raise a connection error simulating an unreachable host
+    mock_client_instance = AsyncMock()
+    mock_client_instance.get = AsyncMock(side_effect=Exception("Connection refused"))
+
+    mock_context = MagicMock()
+    mock_context.__aenter__ = AsyncMock(return_value=mock_client_instance)
+    mock_context.__aexit__ = AsyncMock(return_value=False)
+
+    mock_request = MagicMock()
+    mock_request.app.state.gtfs_feed = None
+
+    # Bypass _validate_feed_url so only the fetch failure is tested
+    with patch("app.routers.gtfs._validate_feed_url"):
+        with patch("app.routers.gtfs.httpx.AsyncClient", return_value=mock_context):
+            with pytest.raises(HTTPException) as exc_info:
+                await import_trip_modifications(
+                    _TripModImportBody(url="https://unreachable.example.com/tripmod.pb"),
+                    mock_request,
+                    user_id="test-user-id",
+                )
+    assert exc_info.value.status_code == 502
 
 
-@_requires
+@_requires_import
 async def test_import_ssrf_blocked():
-    """POST /api/gtfs/trip-modifications/import rejects private/loopback IPs
-    to prevent SSRF.
-    """
-    # Implemented in Plan 02
-    pass
+    """POST /api/gtfs/trip-modifications/import rejects private/loopback IPs to prevent SSRF."""
+    from fastapi import HTTPException
+
+    # Test localhost URL — should raise 400
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://localhost/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test loopback IP
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://127.0.0.1/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test private IP range
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://192.168.1.1/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test http:// (non-https)
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("http://example.com/feed.pb")
+    assert exc_info.value.status_code == 400
+
+    # Test file:// scheme
+    with pytest.raises(HTTPException) as exc_info:
+        _validate_feed_url("file:///etc/passwd")
+    assert exc_info.value.status_code == 400
+
+    # Valid https URL should NOT raise
+    _validate_feed_url("https://example.com/tripmod.pb")  # should not raise
 
 
 # ── Plan 03 stubs: TripMod export (skip-guarded) ─────────────────────────────
 
-@_requires
+@_requires_export
 async def test_export_round_trip_pb(sample_saved_routes, sample_reroute):
     """GET /api/gtfs/export/{reroute_id}/trip-modifications?format=pb returns a
     valid protobuf binary that parses back to a FeedMessage.
@@ -180,7 +292,7 @@ async def test_export_round_trip_pb(sample_saved_routes, sample_reroute):
     pass
 
 
-@_requires
+@_requires_export
 async def test_export_json_format(sample_saved_routes, sample_reroute):
     """GET /api/gtfs/export/{reroute_id}/trip-modifications?format=json returns
     valid JSON that deserializes to a FeedMessage via json_format.
@@ -189,7 +301,7 @@ async def test_export_json_format(sample_saved_routes, sample_reroute):
     pass
 
 
-@_requires
+@_requires_export
 async def test_travel_time_monotonic(sample_saved_routes, sample_reroute):
     """TripMod export: travel_time_to_stop values are non-decreasing across
     replacement_stops in each Modification.

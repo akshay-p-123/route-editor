@@ -201,6 +201,17 @@ export async function exportGtfs(rerouteId: string, token: string): Promise<Blob
   return res.blob();
 }
 
+/** Fetch and parse a GTFS-RT TripModifications protobuf from a user-supplied URL.
+ * Returns a list of affected trips with replacement stops resolved from the static feed.
+ */
+export async function importTripMod(url: string, token: string): Promise<TripModTrip[]> {
+  return fetchJSON<TripModTrip[]>(
+    "/api/gtfs/trip-modifications/import",
+    { method: "POST", body: JSON.stringify({ url }) },
+    token
+  );
+}
+
 // ── MTD v3 Types ──────────────────────────────────────────────────────────────
 
 /** Standard v3 response envelope. */
@@ -394,4 +405,22 @@ export interface ExportPayload {
   route_color: string;
   width?: number;
   height?: number;
+}
+
+// ── TripMod types ─────────────────────────────────────────────────────────────
+
+/** A single replacement stop returned by the TripMod import endpoint. */
+export interface TripModStop {
+  stop_id: string | null;
+  stop_name: string;
+  stop_lat: number;
+  stop_lon: number;
+  travel_time_to_stop?: number;
+}
+
+/** A selected trip with its replacement stops from a TripModifications feed. */
+export interface TripModTrip {
+  trip_id: string;
+  route_short_name: string | null;
+  stops: TripModStop[];
 }
