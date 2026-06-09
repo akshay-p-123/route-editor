@@ -1,4 +1,4 @@
-"""GTFS feed status and metadata endpoints, plus GTFS static export."""
+"""GTFS feed status and metadata endpoints, plus GTFS static export and RT-01 guard."""
 
 import asyncio
 import logging
@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import Response
 from supabase import create_client
 
+from app import gtfs_realtime_pb2 as pb2
 from app.config import settings
 from app.services import gtfs as gtfs_svc
 from app.services.mtd import get_stop_departures
@@ -40,6 +41,20 @@ def get_gtfs_feed(request: Request) -> gtfs_svc.GtfsFeed:
     if request.app.state.gtfs_feed is None:
         raise HTTPException(status_code=503, detail="GTFS feed not yet loaded")
     return request.app.state.gtfs_feed
+
+
+# ── GTFS-RT feed guard (RT-01 / D-07) ────────────────────────────────────────
+
+def get_gtfs_rt_feed(request: Request) -> pb2.FeedMessage:
+    """FastAPI Depends() guard — raises 503 if the GTFS-RT feed is not yet loaded.
+
+    Mirrors get_gtfs_feed for the RT feed stored on app.state.gtfs_rt_feed.
+    Downstream endpoints (Plans 02-03) use Depends(get_gtfs_rt_feed) to obtain
+    the cached RT FeedMessage; a 503 is returned until the first successful fetch.
+    """
+    if request.app.state.gtfs_rt_feed is None:
+        raise HTTPException(status_code=503, detail="GTFS-RT feed not yet available")
+    return request.app.state.gtfs_rt_feed
 
 
 @router.get("/status")

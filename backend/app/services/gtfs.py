@@ -1,7 +1,11 @@
-"""GTFS static feed ingestion service.
+"""GTFS static and GTFS-RT feed ingestion services.
 
-Downloads and parses MTD's GTFS static zip on startup, holds it in memory as a
-GtfsFeed dataclass on app.state.gtfs_feed, and refreshes it in the background.
+Static feed: downloads and parses MTD's GTFS static zip on startup, holds it in
+memory as a GtfsFeed dataclass on app.state.gtfs_feed, and refreshes in background.
+
+RT feed: downloads and parses the MTD GTFS-RT protobuf feed once per hour (RT-01),
+holds the parsed FeedMessage on app.state.gtfs_rt_feed, and retains the prior feed
+on any fetch failure (warn-don't-crash).
 """
 
 import asyncio
@@ -14,6 +18,7 @@ from datetime import datetime, timezone
 import gtfs_kit
 import httpx
 
+from app import gtfs_realtime_pb2 as pb2
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -83,3 +88,38 @@ async def _refresh_loop(app) -> None:
             logger.info("GTFS feed refreshed")
         except Exception as exc:
             logger.warning("GTFS background refresh failed: %s", exc)
+
+
+# ── RT-01: GTFS-RT feed (hourly background refresh) ──────────────────────────
+
+async def load_gtfs_rt_feed() -> pb2.FeedMessage:
+    """Fetch and parse the GTFS-RT protobuf feed from settings.gtfs_rt_feed_url.
+
+    Uses async httpx.AsyncClient — never the synchronous blocking variant.
+    Returns a parsed pb2.FeedMessage. Raises on HTTP or parse errors (caller
+    decides whether to warn-don't-crash).
+    """
+    async with httpx.AsyncClient(timeout=30) as client:
+        resp = await client.get(settings.gtfs_rt_feed_url)
+        resp.raise_for_status()
+
+    msg = pb2.FeedMessage()
+    msg.ParseFromString(resp.content)
+    return msg
+
+
+async def _gtfs_rt_refresh_loop(app) -> None:
+    """Background task that refreshes the GTFS-RT feed once per hour (RT-01).
+
+    Hard-coded 3600s interval per D-06 — never shorter regardless of request
+    volume. Warn-don't-crash: a failed refresh logs a warning and retains the
+    prior feed. app.state.gtfs_rt_feed is never set to None after first success.
+    """
+    while True:
+        await asyncio.sleep(3600)
+        try:
+            rt_feed = await load_gtfs_rt_feed()
+            app.state.gtfs_rt_feed = rt_feed
+            logger.info("GTFS-RT feed refreshed")
+        except Exception as exc:
+            logger.warning("GTFS-RT background refresh failed: %s", exc)

@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:3000"]
     gtfs_feed_url: str = "https://mtd.dev/gtfs.zip"
     gtfs_refresh_interval_hours: int = 6
+    gtfs_rt_feed_url: str = "https://gtfs-rt.mtd.org/"
 
     class Config:
         env_file = ".env"
