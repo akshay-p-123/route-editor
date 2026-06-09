@@ -7,7 +7,8 @@ import pathlib
 import re
 import tempfile
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo
 from uuid import UUID
 
 import gtfs_kit
@@ -424,6 +425,18 @@ _dep_cache: dict[str, tuple[dict, float]] = {}
 _DEP_CACHE_TTL = 60  # seconds
 
 
+def _parse_iso_ts(s: str) -> float:
+    """Parse an ISO-8601 timestamp string and return a UTC epoch float.
+
+    If the string is timezone-naive (as MTD API sometimes returns), treat it
+    as America/Chicago so delay computations are not off by the UTC offset.
+    """
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("America/Chicago"))
+    return dt.timestamp()
+
+
 def _compute_delay(departure: dict) -> int | None:
     """Compute delay_seconds for a single departure dict.
 
@@ -444,8 +457,8 @@ def _compute_delay(departure: dict) -> int | None:
         return 0
 
     return int(
-        datetime.fromisoformat(estimated).timestamp()
-        - datetime.fromisoformat(scheduled).timestamp()
+        _parse_iso_ts(estimated)
+        - _parse_iso_ts(scheduled)
     )
 
 
@@ -477,7 +490,7 @@ async def _get_delays_for_stops(stop_ids: list[str]) -> dict[str, int]:
             if not valid:
                 continue
 
-            valid.sort(key=lambda d: datetime.fromisoformat(d["scheduledDeparture"]).timestamp())
+            valid.sort(key=lambda d: _parse_iso_ts(d["scheduledDeparture"]))
             soonest = valid[0]
 
             delay = _compute_delay(soonest)
