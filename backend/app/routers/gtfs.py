@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 import pathlib
+import re
 import tempfile
 import time
 from datetime import date, datetime, timedelta
@@ -23,6 +24,9 @@ from app.services.mtd import get_stop_departures
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/gtfs", tags=["gtfs"])
+
+# ── Input validation ─────────────────────────────────────────────────────────
+_STOP_ID_RE = re.compile(r'^[A-Za-z0-9_\-]{1,64}$')
 
 
 # ── GTFS feed guard (Phase 1 status endpoint) ────────────────────────────────
@@ -498,6 +502,9 @@ async def get_trip_updates(
     ids = [sid.strip() for sid in stop_ids.split(",") if sid.strip()]
     if not ids:
         raise HTTPException(status_code=400, detail="stop_ids must not be empty")
+    for sid in ids:
+        if not _STOP_ID_RE.match(sid):
+            raise HTTPException(status_code=400, detail=f"Invalid stop_id: {sid!r}")
 
     # Order-independent cache key (Pitfall 1 — sorted to maximize hit rate)
     cache_key = ",".join(sorted(ids))
