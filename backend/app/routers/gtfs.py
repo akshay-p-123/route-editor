@@ -467,22 +467,25 @@ async def _get_delays_for_stops(stop_ids: list[str]) -> dict[str, int]:
         if isinstance(result, Exception):
             logger.warning("MTD departure fetch failed for %s: %s", stop_id, result)
             continue
+        try:
+            departures = result.get("result") or []
+            if not departures:
+                continue  # omit stops with no departure data (D-07)
 
-        departures = result.get("result") or []
-        if not departures:
-            continue  # omit stops with no departure data (D-07)
+            # Filter to departures with a non-null scheduledDeparture, then sort by epoch (Pitfall 3)
+            valid = [d for d in departures if d.get("scheduledDeparture")]
+            if not valid:
+                continue
 
-        # Filter to departures with a non-null scheduledDeparture, then sort by epoch (Pitfall 3)
-        valid = [d for d in departures if d.get("scheduledDeparture")]
-        if not valid:
+            valid.sort(key=lambda d: datetime.fromisoformat(d["scheduledDeparture"]).timestamp())
+            soonest = valid[0]
+
+            delay = _compute_delay(soonest)
+            if delay is not None:
+                delays[stop_id] = delay
+        except (ValueError, TypeError, KeyError) as exc:
+            logger.warning("Malformed departure data for %s: %s", stop_id, exc)
             continue
-
-        valid.sort(key=lambda d: datetime.fromisoformat(d["scheduledDeparture"]).timestamp())
-        soonest = valid[0]
-
-        delay = _compute_delay(soonest)
-        if delay is not None:
-            delays[stop_id] = delay
 
     return delays
 
