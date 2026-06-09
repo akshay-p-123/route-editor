@@ -415,7 +415,8 @@ async def export_gtfs(
         raise HTTPException(status_code=500, detail="Failed to generate GTFS zip")
 
     # ── 6. Return zip response ───────────────────────────────────────────────
-    filename = f"{reroute['name'].replace(' ', '_')}-gtfs.zip"
+    safe_name = re.sub(r'[^\w\-]', '_', reroute['name'])
+    filename = f"{safe_name}-gtfs.zip"
     return Response(
         content=zip_bytes,
         media_type="application/zip",
