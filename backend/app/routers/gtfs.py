@@ -297,7 +297,8 @@ async def _write_feed(feed: gtfs_kit.Feed) -> bytes:
     """Write a gtfs_kit.Feed to a temporary zip and return raw bytes.
 
     Uses run_in_executor because feed.to_file() is synchronous and CPU-bound
-    (pandas CSV serialization). Never raises — caller handles exceptions.
+    (pandas CSV serialization). May raise on I/O or serialization errors —
+    caller is responsible for catching and converting to HTTPException.
     """
     loop = asyncio.get_running_loop()
 
@@ -407,7 +408,11 @@ async def export_gtfs(
         feed_info=feed_info_df,
     )
 
-    zip_bytes = await _write_feed(feed)
+    try:
+        zip_bytes = await _write_feed(feed)
+    except Exception as exc:
+        logger.error("GTFS feed write failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Failed to generate GTFS zip")
 
     # ── 6. Return zip response ───────────────────────────────────────────────
     filename = f"{reroute['name'].replace(' ', '_')}-gtfs.zip"
