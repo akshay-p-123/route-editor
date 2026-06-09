@@ -66,13 +66,17 @@ Decimal phases appear between their surrounding integers in numeric order.
 **Goal**: User can import a GTFS-RT TripModifications protobuf feed into the editor (replacement stops rendered on map, editable), and export an edited reroute as a TripModifications protobuf
 **Mode:** mvp
 **Depends on**: Phase 1 (static feed for stop coordinate resolution), Phase 3 (delay data for timing augmentation)
-**Requirements**: TRIPMOD-01, TRIPMOD-02, TRIPMOD-03, TRIPMOD-04, TRIPMOD-05, TRIPMOD-06
+**Requirements**: TRIPMOD-01, TRIPMOD-02, TRIPMOD-03, TRIPMOD-04, TRIPMOD-05, TRIPMOD-06 (also completes RT-01, deferred from Phase 3)
 **Success Criteria** (what must be TRUE):
   1. User enters a TripModifications feed URL in the editor and sees replacement stops rendered on the map for the affected trip
   2. Imported replacement stops can be edited with standard stop-editing gestures (reorder, add, remove, drag-snap)
   3. User can export a saved reroute as a GTFS-RT TripModifications protobuf download
   4. Imported modification correctly resolves stop coordinates from the in-memory GTFS static feed (Phase 1 dependency)
-**Plans**: TBD
+**Plans**: 4 plans
+  - [x] 04-01-PLAN.md — Protobuf + RT-01 foundation: generate/commit gtfs_realtime_pb2.py, gtfs_rt_feed_url setting, hourly RT-01 background refresh (warn-don't-crash, once/hour cap), Wave 0 test scaffold
+  - [ ] 04-02-PLAN.md — TripMod import slice: POST /trip-modifications/import (parse + stop resolution + SSRF guard) + TripModImportModal + EditorToolbar button → editable custom route
+  - [ ] 04-03-PLAN.md — TripMod export slice: GET /export/{reroute_id}/trip-modifications (.pb/.json, one entity per route) + exportTripMod client + RerouteDashboard export section
+  - [ ] 04-04-PLAN.md — GTFS zip import slice (folded todo): POST /import (gtfs_kit.read_feed → reroute package, synthetic-id fallback, 422/413 guards) + Import GTFS footer button
 **UI hint**: yes
 
 ### Phase 5: Reroute Travel-Time Estimation
@@ -97,5 +101,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. GTFS Static Ingestion | 1/1 | Complete   | 2026-06-06 |
 | 2. GTFS Export | 3/3 | Complete   | 2026-06-08 |
 | 3. Trip Update Integration | 1/1 | Complete   | 2026-06-08 |
-| 4. Trip Modifications Round-Trip | 0/TBD | Not started | - |
+| 4. Trip Modifications Round-Trip | 1/4 | In Progress|  |
 | 5. Reroute Travel-Time Estimation | 0/TBD | Not started | - |
