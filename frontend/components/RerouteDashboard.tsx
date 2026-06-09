@@ -2,7 +2,7 @@
 
 import { useState, useMemo, useEffect } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { reroutes, savedRoutes as savedRoutesApi, mtd, exportPng, exportGtfs, type Reroute, type RouteGroup, type ExportPayload } from "@/lib/api";
+import { reroutes, savedRoutes as savedRoutesApi, mtd, exportPng, exportGtfs, exportTripMod, type Reroute, type RouteGroup, type ExportPayload } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 import { useEditorStore } from "@/store/editorStore";
 import type { EditorStop } from "@/store/editorStore";
@@ -10,6 +10,7 @@ import { validateRoute } from "@/lib/validation";
 import { buildStopMap } from "@/lib/stopUtils";
 import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, FileArchive, Loader2, LogIn, Pencil } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
@@ -25,6 +26,9 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
 
   const [exportingRerouteId, setExportingRerouteId] = useState<string | null>(null);
   const [exportingGtfsRerouteId, setExportingGtfsRerouteId] = useState<string | null>(null);
+  const [tripModExportingId, setTripModExportingId] = useState<string | null>(null);
+  const [tripIdInputs, setTripIdInputs] = useState<Record<string, string>>({});
+  const [tripModExportError, setTripModExportError] = useState<string | null>(null);
   const [editingRerouteId, setEditingRerouteId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
 
@@ -262,6 +266,28 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
       console.error("GTFS export failed:", err);
     } finally {
       setExportingGtfsRerouteId(null);
+    }
+  }
+
+  async function handleExportTripMod(reroute: Reroute, tripId: string, format: "pb" | "json") {
+    if (!token) return;
+    const exportKey = `${reroute.id}-${format}`;
+    setTripModExportingId(exportKey);
+    setTripModExportError(null);
+    try {
+      const blob = await exportTripMod(reroute.id, tripId, format, token);
+      const safeName = reroute.name.replace(/[^\w\s\-().]/g, "_");
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${safeName}-tripmod.${format === "pb" ? "pb" : "json"}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setTripModExportError("Export failed. Check the trip ID and try again.");
+      console.error("TripMod export failed:", err);
+    } finally {
+      setTripModExportingId(null);
     }
   }
 
@@ -600,6 +626,47 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
                           </div>
                         </div>
                       )}
+
+                      <div className="border-t pt-4">
+                        <h4 className="text-sm font-semibold mb-2">Export as TripMod Feed</h4>
+                        <label className="text-sm mb-1 block">Original trip ID</label>
+                        <Input
+                          placeholder="e.g. MTD_12345"
+                          value={tripIdInputs[reroute.id] ?? ""}
+                          onChange={(e) =>
+                            setTripIdInputs((prev) => ({ ...prev, [reroute.id]: e.target.value }))
+                          }
+                        />
+                        <p className="text-xs text-muted-foreground mt-1 mb-2">
+                          Find trip IDs at /api/gtfs/status or the MTD developer API
+                        </p>
+                        <div className="flex gap-2">
+                          <Button
+                            size="sm"
+                            aria-label="Download TripMod as .pb"
+                            disabled={!tripIdInputs[reroute.id]?.trim() || tripModExportingId === `${reroute.id}-pb`}
+                            onClick={() => void handleExportTripMod(reroute, tripIdInputs[reroute.id] ?? "", "pb")}
+                          >
+                            {tripModExportingId === `${reroute.id}-pb` ? (
+                              <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />Exporting…</>
+                            ) : "Download .pb"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            aria-label="Download TripMod as JSON"
+                            disabled={!tripIdInputs[reroute.id]?.trim() || tripModExportingId === `${reroute.id}-json`}
+                            onClick={() => void handleExportTripMod(reroute, tripIdInputs[reroute.id] ?? "", "json")}
+                          >
+                            {tripModExportingId === `${reroute.id}-json` ? (
+                              <><Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />Exporting…</>
+                            ) : "Download JSON"}
+                          </Button>
+                        </div>
+                        {tripModExportError && (
+                          <p className="text-xs text-destructive mt-2">{tripModExportError}</p>
+                        )}
+                      </div>
                     </div>
                   )}
                 </div>
