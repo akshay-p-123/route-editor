@@ -15,7 +15,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 1: GTFS Static Ingestion** - Backend loads and refreshes MTD's GTFS feed; Docker image builds with GDAL (completed 2026-06-06)
 - [x] **Phase 2: GTFS Export** - User can download a spec-compliant GTFS zip for saved routes from the editor (completed 2026-06-08)
 - [x] **Phase 3: Trip Update Integration** - Backend fetches, caches, and exposes GTFS-RT delay data for stops (completed 2026-06-08)
-- [ ] **Phase 4: Trip Modifications Round-Trip** - User can import a TripModifications feed into the editor and export a saved reroute as a TripModifications protobuf
+- [x] **Phase 4: Trip Modifications Round-Trip** - User can import a TripModifications feed into the editor and export a saved reroute as a TripModifications protobuf (completed 2026-06-10)
 - [ ] **Phase 5: Reroute Travel-Time Estimation** - Editor displays per-stop arrival delta for proposed stop sequence changes
 
 ## Phase Details
@@ -76,7 +76,7 @@ Decimal phases appear between their surrounding integers in numeric order.
   - [x] 04-01-PLAN.md — Protobuf + RT-01 foundation: generate/commit gtfs_realtime_pb2.py, gtfs_rt_feed_url setting, hourly RT-01 background refresh (warn-don't-crash, once/hour cap), Wave 0 test scaffold
   - [x] 04-02-PLAN.md — TripMod import slice: POST /trip-modifications/import (parse + stop resolution + SSRF guard) + TripModImportModal + EditorToolbar button → editable custom route
   - [x] 04-03-PLAN.md — TripMod export slice: GET /export/{reroute_id}/trip-modifications (.pb/.json, one entity per route) + exportTripMod client + RerouteDashboard export section
-  - [ ] 04-04-PLAN.md — GTFS zip import slice (folded todo): POST /import (gtfs_kit.read_feed → reroute package, synthetic-id fallback, 422/413 guards) + Import GTFS footer button
+  - [x] 04-04-PLAN.md — GTFS zip import slice (folded todo): POST /import (gtfs_kit.read_feed → reroute package, synthetic-id fallback, 422/413 guards) + Import GTFS footer button
 **UI hint**: yes
 
 ### Phase 5: Reroute Travel-Time Estimation
@@ -101,5 +101,5 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 1. GTFS Static Ingestion | 1/1 | Complete   | 2026-06-06 |
 | 2. GTFS Export | 3/3 | Complete   | 2026-06-08 |
 | 3. Trip Update Integration | 1/1 | Complete   | 2026-06-08 |
-| 4. Trip Modifications Round-Trip | 3/4 | In Progress|  |
+| 4. Trip Modifications Round-Trip | 4/4 | Complete   | 2026-06-10 |
 | 5. Reroute Travel-Time Estimation | 0/TBD | Not started | - |
