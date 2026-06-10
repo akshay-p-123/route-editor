@@ -212,6 +212,45 @@ export async function importTripMod(url: string, token: string): Promise<TripMod
   );
 }
 
+/**
+ * Upload a GTFS static zip and create a reroute package from it.
+ * Does NOT set Content-Type — the browser sets the multipart boundary for FormData.
+ */
+export async function importGtfs(
+  file: File,
+  token: string
+): Promise<{ reroute_id: string; route_count: number }> {
+  const form = new FormData();
+  form.append("file", file);
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${BASE}/api/gtfs/import`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const body = await res.text().catch(() => "");
+      try {
+        const parsed = JSON.parse(body);
+        throw new Error(parsed?.detail ?? `Import failed: ${res.statusText}`);
+      } catch {
+        throw new Error(`Import failed: ${res.statusText}`);
+      }
+    }
+    return res.json();
+  } catch (err) {
+    if ((err as Error)?.name === "AbortError") {
+      throw new Error(`Request timed out after ${DEFAULT_TIMEOUT_MS / 1000}s`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /** Download a GTFS-RT TripModifications feed for a reroute package as binary .pb or JSON. */
 export async function exportTripMod(
   rerouteId: string,

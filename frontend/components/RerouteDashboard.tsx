@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useRef } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { reroutes, savedRoutes as savedRoutesApi, mtd, exportPng, exportGtfs, exportTripMod, type Reroute, type RouteGroup, type ExportPayload } from "@/lib/api";
+import { reroutes, savedRoutes as savedRoutesApi, mtd, exportPng, exportGtfs, exportTripMod, importGtfs, type Reroute, type RouteGroup, type ExportPayload } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 import { useEditorStore } from "@/store/editorStore";
 import type { EditorStop } from "@/store/editorStore";
@@ -12,7 +12,7 @@ import { loadMTDRoute, buildDirectionsByGroup } from "@/lib/routeLoader";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, FileArchive, Loader2, LogIn, Pencil } from "lucide-react";
+import { X, ChevronDown, ChevronRight, Trash2, Plus, Download, FileArchive, Loader2, LogIn, Pencil, Upload } from "lucide-react";
 import NewRerouteModal from "@/components/NewRerouteModal";
 
 interface RerouteDashboardProps {
@@ -31,6 +31,11 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
   const [tripModExportError, setTripModExportError] = useState<string | null>(null);
   const [editingRerouteId, setEditingRerouteId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+
+  // GTFS zip import state
+  const [importingGtfs, setImportingGtfs] = useState(false);
+  const [gtfsImportError, setGtfsImportError] = useState<string | null>(null);
+  const gtfsFileInputRef = useRef<HTMLInputElement>(null);
 
   // Route picker state (for "Edit a route in this reroute")
   const [pickGroup, setPickGroup] = useState<RouteGroup | null>(null);
@@ -266,6 +271,24 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
       console.error("GTFS export failed:", err);
     } finally {
       setExportingGtfsRerouteId(null);
+    }
+  }
+
+  async function handleGtfsFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file || !token) return;
+    setImportingGtfs(true);
+    setGtfsImportError(null);
+    try {
+      await importGtfs(file, token);
+      queryClient.invalidateQueries({ queryKey: ["reroutes"] });
+    } catch (err) {
+      setGtfsImportError("Invalid GTFS zip. Upload a valid GTFS feed zip file.");
+      console.error("GTFS import failed:", err);
+      setTimeout(() => setGtfsImportError(null), 5000);
+    } finally {
+      setImportingGtfs(false);
     }
   }
 
@@ -678,10 +701,34 @@ export default function RerouteDashboard({ onClose }: RerouteDashboardProps) {
         {/* ── Footer ───────────────────────────────────────────────────── */}
         {!isGuest && (
           <div className="px-6 py-4 border-t">
-            <Button onClick={() => setShowNewReroute(true)} className="w-full">
-              <Plus className="w-4 h-4 mr-2" />
-              New Reroute
-            </Button>
+            <div className="flex gap-2">
+              <input
+                ref={gtfsFileInputRef}
+                type="file"
+                accept=".zip"
+                className="hidden"
+                onChange={handleGtfsFileChange}
+              />
+              <Button
+                variant="outline"
+                onClick={() => gtfsFileInputRef.current?.click()}
+                disabled={importingGtfs}
+                className="flex-1"
+              >
+                {importingGtfs ? (
+                  <><Loader2 className="w-4 h-4 mr-2 animate-spin" />Importing…</>
+                ) : (
+                  <><Upload className="w-4 h-4 mr-2" />Import GTFS</>
+                )}
+              </Button>
+              <Button onClick={() => setShowNewReroute(true)} className="flex-1">
+                <Plus className="w-4 h-4 mr-2" />
+                New Reroute
+              </Button>
+            </div>
+            {gtfsImportError && (
+              <p className="text-sm text-destructive mt-2">{gtfsImportError}</p>
+            )}
           </div>
         )}
       </div>
