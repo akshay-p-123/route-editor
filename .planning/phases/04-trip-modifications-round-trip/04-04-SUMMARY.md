@@ -57,7 +57,7 @@ completed: 2026-06-10
 - **Duration:** ~22 min
 - **Started:** 2026-06-10T01:34:31Z (RED commit)
 - **Completed:** 2026-06-10T01:48:42Z (frontend commit)
-- **Tasks:** 2 of 3 (Task 3 is a blocking human-verify checkpoint, pending)
+- **Tasks:** 3 of 3
 - **Files modified:** 5 (1 created)
 
 ## Accomplishments
@@ -124,15 +124,19 @@ None — both endpoint and UI are fully wired to live Supabase tables and the re
 ## User Setup Required
 None - no external service configuration required.
 
-## Next Phase Readiness
-- Backend endpoint and frontend UI are implemented, tested (backend), type-checked and linted (frontend), and both dev servers are confirmed running and ready for the Task 3 human-verify checkpoint.
-- **Task 3 (checkpoint:human-verify, gate=blocking) is NOT yet completed** — requires a human to perform the UI verification steps in the browser (upload a GTFS zip via the Import GTFS button, confirm reroute list refresh, confirm error handling on invalid zip).
-- After Task 3 is approved, phase 04 (trip-modifications-round-trip) is complete — this is its final wave/plan.
+## Task 3: Verification
+
+**Task 3 (checkpoint:human-verify, gate=blocking) — APPROVED by user.**
+
+User confirmed Import GTFS button in RerouteDashboard works end-to-end (upload,
+loading state, reroute list refresh). Phase 04 (trip-modifications-round-trip)
+is complete (4/4 plans).
+
 - Deferred: `_user_id()` malformed-JWT 500 — see `deferred-items.md` for a future fix recommendation.
 
 ---
 *Phase: 04-trip-modifications-round-trip*
-*Completed: 2026-06-10 (Tasks 1-2; Task 3 checkpoint pending)*
+*Completed: 2026-06-10*
 
 ## Self-Check: PASSED
 
