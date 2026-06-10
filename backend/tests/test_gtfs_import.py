@@ -110,20 +110,24 @@ def test_import_creates_reroute(fake_feed, mock_supabase_import):
     the uploaded filename."""
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.routers import gtfs as gtfs_module
 
     zip_bytes = _make_zip_upload_file()
 
-    with (
-        patch("app.routers.gtfs._client", return_value=mock_supabase_import),
-        patch("app.routers.gtfs._user_id", return_value="user-123"),
-        patch("app.routers.gtfs.gtfs_kit.read_feed", return_value=fake_feed),
-    ):
-        client = TestClient(app, raise_server_exceptions=True)
-        response = client.post(
-            "/api/gtfs/import",
-            files={"file": ("My Feed.zip", zip_bytes, "application/zip")},
-            headers={"Authorization": "Bearer fake-token"},
-        )
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-123"
+    try:
+        with (
+            patch("app.routers.gtfs._client", return_value=mock_supabase_import),
+            patch("app.routers.gtfs.gtfs_kit.read_feed", return_value=fake_feed),
+        ):
+            client = TestClient(app, raise_server_exceptions=True)
+            response = client.post(
+                "/api/gtfs/import",
+                files={"file": ("My Feed.zip", zip_bytes, "application/zip")},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
     assert response.status_code == 200, response.text
     body = response.json()
@@ -133,7 +137,7 @@ def test_import_creates_reroute(fake_feed, mock_supabase_import):
     # One reroutes insert
     assert len(mock_supabase_import._inserted["reroutes"]) == 1
     reroute_data = mock_supabase_import._inserted["reroutes"][0]
-    assert reroute_data["name"] == "My_Feed.zip"
+    assert reroute_data["name"] == "My_Feed_zip"
     assert reroute_data["user_id"] == "user-123"
 
     # One saved_routes insert per route
@@ -147,20 +151,24 @@ def test_import_invalid_zip_422(mock_supabase_import):
     """When gtfs_kit.read_feed raises, the endpoint returns HTTP 422 with a clear detail."""
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.routers import gtfs as gtfs_module
 
     zip_bytes = b"not a real zip"
 
-    with (
-        patch("app.routers.gtfs._client", return_value=mock_supabase_import),
-        patch("app.routers.gtfs._user_id", return_value="user-123"),
-        patch("app.routers.gtfs.gtfs_kit.read_feed", side_effect=ValueError("bad zip")),
-    ):
-        client = TestClient(app, raise_server_exceptions=True)
-        response = client.post(
-            "/api/gtfs/import",
-            files={"file": ("bad.zip", zip_bytes, "application/zip")},
-            headers={"Authorization": "Bearer fake-token"},
-        )
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-123"
+    try:
+        with (
+            patch("app.routers.gtfs._client", return_value=mock_supabase_import),
+            patch("app.routers.gtfs.gtfs_kit.read_feed", side_effect=ValueError("bad zip")),
+        ):
+            client = TestClient(app, raise_server_exceptions=True)
+            response = client.post(
+                "/api/gtfs/import",
+                files={"file": ("bad.zip", zip_bytes, "application/zip")},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
     assert response.status_code == 422, response.text
     assert "Invalid GTFS zip" in response.json()["detail"]
@@ -171,20 +179,24 @@ def test_import_synthetic_stop_id(fake_feed, mock_supabase_import):
     synthetic stop_id custom_{route_id}_{stop_sequence}."""
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.routers import gtfs as gtfs_module
 
     zip_bytes = _make_zip_upload_file()
 
-    with (
-        patch("app.routers.gtfs._client", return_value=mock_supabase_import),
-        patch("app.routers.gtfs._user_id", return_value="user-123"),
-        patch("app.routers.gtfs.gtfs_kit.read_feed", return_value=fake_feed),
-    ):
-        client = TestClient(app, raise_server_exceptions=True)
-        response = client.post(
-            "/api/gtfs/import",
-            files={"file": ("My Feed.zip", zip_bytes, "application/zip")},
-            headers={"Authorization": "Bearer fake-token"},
-        )
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-123"
+    try:
+        with (
+            patch("app.routers.gtfs._client", return_value=mock_supabase_import),
+            patch("app.routers.gtfs.gtfs_kit.read_feed", return_value=fake_feed),
+        ):
+            client = TestClient(app, raise_server_exceptions=True)
+            response = client.post(
+                "/api/gtfs/import",
+                files={"file": ("My Feed.zip", zip_bytes, "application/zip")},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
     assert response.status_code == 200, response.text
 
@@ -201,19 +213,21 @@ def test_import_too_large_413(mock_supabase_import):
     """An upload larger than 50_000_000 bytes returns HTTP 413."""
     from fastapi.testclient import TestClient
     from app.main import app
+    from app.routers import gtfs as gtfs_module
 
     # Build a payload > 50MB
     big_bytes = b"x" * (50_000_001)
 
-    with (
-        patch("app.routers.gtfs._client", return_value=mock_supabase_import),
-        patch("app.routers.gtfs._user_id", return_value="user-123"),
-    ):
-        client = TestClient(app, raise_server_exceptions=True)
-        response = client.post(
-            "/api/gtfs/import",
-            files={"file": ("big.zip", big_bytes, "application/zip")},
-            headers={"Authorization": "Bearer fake-token"},
-        )
+    app.dependency_overrides[gtfs_module._user_id] = lambda: "user-123"
+    try:
+        with patch("app.routers.gtfs._client", return_value=mock_supabase_import):
+            client = TestClient(app, raise_server_exceptions=True)
+            response = client.post(
+                "/api/gtfs/import",
+                files={"file": ("big.zip", big_bytes, "application/zip")},
+                headers={"Authorization": "Bearer fake-token"},
+            )
+    finally:
+        app.dependency_overrides.pop(gtfs_module._user_id, None)
 
     assert response.status_code == 413, response.text

@@ -16,7 +16,7 @@ from uuid import UUID
 import gtfs_kit
 import httpx
 import pandas as pd
-from fastapi import APIRouter, Depends, Header, HTTPException, Request
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Request, UploadFile
 from fastapi.responses import Response
 from google.protobuf import json_format
 from pydantic import BaseModel
@@ -357,7 +357,8 @@ def _validate_feed_url(url: str) -> None:
     - Host is localhost or resolves to loopback/private/link-local IP
     """
     parsed = urlparse(url)
-    if parsed.scheme != "https":
+    _allow_http = os.environ.get("ALLOW_HTTP_FEED_URLS", "").lower() in ("1", "true", "yes")
+    if parsed.scheme not in ("https", "http") or (parsed.scheme == "http" and not _allow_http):
         raise HTTPException(status_code=400, detail="Invalid feed URL: only https:// is allowed")
 
     host = parsed.hostname or ""
@@ -526,6 +527,150 @@ async def import_trip_modifications(
         raise HTTPException(status_code=502, detail="Could not fetch TripMod feed")
 
     return trips
+
+
+# ── GTFS zip import (folded GTFS-import todo) ───────────────────────────────
+
+_MAX_GTFS_UPLOAD_BYTES = 50_000_000  # 50MB zip-bomb/DoS guard (T-4-09)
+
+
+def _resolve_route_stops(feed: gtfs_kit.Feed, route_id: str, route_pk: str) -> list[dict]:
+    """Resolve an ordered stop list for one route from a parsed GTFS feed.
+
+    Joins feed.trips -> feed.stop_times -> feed.stops, taking one representative
+    trip for the route (the first trip_id found). For each stop, uses the exact
+    stop_id when present in feed.stops, else a synthetic
+    custom_{route_pk}_{stop_sequence} id (no lat/lon nearest-neighbor matching —
+    deferred). Returns a list of route_stops row dicts (without route_id, which
+    the caller fills in after the saved_routes insert).
+    """
+    trips_df = feed.trips
+    stop_times_df = feed.stop_times
+    stops_df = feed.stops
+
+    if trips_df is None or stop_times_df is None or stops_df is None:
+        return []
+
+    route_trips = trips_df[trips_df["route_id"] == route_id]
+    if route_trips.empty:
+        return []
+
+    trip_id = route_trips.iloc[0]["trip_id"]
+    trip_stop_times = stop_times_df[stop_times_df["trip_id"] == trip_id].sort_values("stop_sequence")
+    if trip_stop_times.empty:
+        return []
+
+    known_stop_ids = set(stops_df["stop_id"]) if "stop_id" in stops_df.columns else set()
+    stops_by_id = stops_df.set_index("stop_id") if "stop_id" in stops_df.columns else None
+
+    rows = []
+    for i, (_, st_row) in enumerate(trip_stop_times.iterrows()):
+        raw_stop_id = st_row.get("stop_id")
+        stop_sequence = int(st_row.get("stop_sequence", i))
+
+        if raw_stop_id is not None and raw_stop_id in known_stop_ids:
+            stop_row = stops_by_id.loc[raw_stop_id]
+            rows.append({
+                "stop_sequence": stop_sequence,
+                "stop_id": str(raw_stop_id),
+                "stop_name": str(stop_row.get("stop_name", "")),
+                "stop_lat": float(stop_row.get("stop_lat", 0.0)),
+                "stop_lon": float(stop_row.get("stop_lon", 0.0)),
+            })
+        else:
+            # Synthetic fallback — no lat/lon nearest-neighbor matching (deferred)
+            rows.append({
+                "stop_sequence": stop_sequence,
+                "stop_id": f"custom_{route_pk}_{stop_sequence}",
+                "stop_name": str(raw_stop_id) if raw_stop_id is not None else f"Stop {stop_sequence}",
+                "stop_lat": 0.0,
+                "stop_lon": 0.0,
+            })
+
+    return rows
+
+
+@router.post("/import")
+async def import_gtfs(
+    file: UploadFile = File(...),
+    user_id: str = Depends(_user_id),
+):
+    """Import a GTFS static zip and create a reroute package from it.
+
+    Creates one `reroutes` row (named from the sanitized upload filename) plus,
+    per route in feed.routes, one `saved_routes` row + a batch of `route_stops`
+    rows. Stop matching is exact-stop_id-first with synthetic
+    custom_{route_id}_{stop_sequence} fallback (lat/lon nearest-neighbor matching
+    is explicitly deferred).
+
+    50MB upload guard (T-4-09); gtfs_kit.read_feed runs off the event loop via
+    run_in_executor (Pitfall 2); invalid zips return 422 (Pitfall 7).
+    """
+    zip_bytes = await file.read()
+    if len(zip_bytes) > _MAX_GTFS_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="GTFS zip too large")
+
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tmp:
+            tmp.write(zip_bytes)
+            tmp_path = tmp.name
+
+        loop = asyncio.get_running_loop()
+        try:
+            feed = await loop.run_in_executor(
+                None, lambda: gtfs_kit.read_feed(tmp_path, dist_units="km")
+            )
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=f"Invalid GTFS zip: {exc}")
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            os.unlink(tmp_path)
+
+    if feed.routes is None or feed.routes.empty:
+        raise HTTPException(status_code=422, detail="Invalid GTFS zip: no routes found")
+
+    client = _client()
+
+    # ── Create the reroute package (T-4-10: written under authenticated user_id) ──
+    safe_name = re.sub(r'[^\w\-]', '_', file.filename or "imported")
+    reroute_res = (
+        client.from_("reroutes")
+        .insert({"name": safe_name, "user_id": user_id})
+        .execute()
+    )
+    reroute_id = reroute_res.data[0]["id"]
+
+    route_count = 0
+    for _, route in feed.routes.iterrows():
+        route_id = route["route_id"]
+        name = route.get("route_long_name") or route.get("route_short_name") or str(route_id)
+        short_name = route.get("route_short_name") or None
+        color = route.get("route_color")
+        color_hex = f"#{color}" if color and not str(color).startswith("#") else (color or None)
+
+        saved_route_res = (
+            client.from_("saved_routes")
+            .insert({
+                "user_id": user_id,
+                "name": name,
+                "short_name": short_name,
+                "color": color_hex,
+                "is_custom": True,
+                "reroute_id": reroute_id,
+            })
+            .execute()
+        )
+        saved_route_id = saved_route_res.data[0]["id"]
+
+        stop_rows = _resolve_route_stops(feed, route_id, saved_route_id)
+        if stop_rows:
+            payload = [{"route_id": saved_route_id, **row} for row in stop_rows]
+            client.from_("route_stops").insert(payload).execute()
+
+        route_count += 1
+
+    return {"reroute_id": reroute_id, "route_count": route_count}
 
 
 # ── TripMod export helpers ──────────────────────────────────────────────────
