@@ -154,8 +154,12 @@ function SortableStop({
   const hasWarning = !hasError && stopIssues.some((e) => e.severity === "warning");
   const firstIssue = stopIssues[0];
 
-  // Travel-time estimate badge for this stop
-  const estimate = travelTimeEstimates?.find((e) => e.stop_sequence === stop.stop_sequence);
+  // Travel-time estimate badge for this stop. Match by stop_id when available
+  // (stable across reorders/inserts/deletes); fall back to stop_sequence for
+  // editor-added stops, which have no stop_id.
+  const estimate = stop.stop_id
+    ? travelTimeEstimates?.find((e) => e.stop_id === stop.stop_id)
+    : travelTimeEstimates?.find((e) => e.stop_id === null && e.stop_sequence === stop.stop_sequence);
   let deltaColorClass = "text-muted-foreground";
   let DeltaIcon = Minus;
   let tooltipText = "";
