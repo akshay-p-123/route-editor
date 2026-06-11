@@ -16,7 +16,7 @@ Decimal phases appear between their surrounding integers in numeric order.
 - [x] **Phase 2: GTFS Export** - User can download a spec-compliant GTFS zip for saved routes from the editor (completed 2026-06-08)
 - [x] **Phase 3: Trip Update Integration** - Backend fetches, caches, and exposes GTFS-RT delay data for stops (completed 2026-06-08)
 - [x] **Phase 4: Trip Modifications Round-Trip** - User can import a TripModifications feed into the editor and export a saved reroute as a TripModifications protobuf (completed 2026-06-10)
-- [ ] **Phase 5: Reroute Travel-Time Estimation** - Editor displays per-stop arrival delta for proposed stop sequence changes
+- [x] **Phase 5: Reroute Travel-Time Estimation** - Editor displays per-stop arrival delta for proposed stop sequence changes (completed 2026-06-11)
 
 ## Phase Details
 
@@ -89,8 +89,8 @@ Decimal phases appear between their surrounding integers in numeric order.
   2. Backend computes per-stop estimated arrival delta by combining OSRM road travel time for new/moved stops with upstream MTD departure delay for existing stops
   3. Editor displays per-stop estimated arrival delta values alongside the existing route preview for the proposed modification
 **Plans**: 2 plans
-  - [ ] 05-01-PLAN.md — Backend EST-02 slice: POST /api/gtfs/estimate-travel-time composing _osrm_route + _get_delays_for_stops, _diff_stop_sequences, Pydantic models, Wave 0 test scaffold (6 unit tests)
-  - [ ] 05-02-PLAN.md — Frontend EST-01/EST-03 slice: estimateTravelTime client + store state/stale-wiring + Estimate Travel Time toolbar button + per-stop delta badges + browser human-verify
+  - [x] 05-01-PLAN.md — Backend EST-02 slice: POST /api/gtfs/estimate-travel-time composing _osrm_route + _get_delays_for_stops, _diff_stop_sequences, Pydantic models, Wave 0 test scaffold (6 unit tests)
+  - [x] 05-02-PLAN.md — Frontend EST-01/EST-03 slice: estimateTravelTime client + store state/stale-wiring + Estimate Travel Time toolbar button + per-stop delta badges + browser human-verify
 **UI hint**: yes
 
 ## Progress
@@ -104,4 +104,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. GTFS Export | 3/3 | Complete   | 2026-06-08 |
 | 3. Trip Update Integration | 1/1 | Complete   | 2026-06-08 |
 | 4. Trip Modifications Round-Trip | 4/4 | Complete   | 2026-06-10 |
-| 5. Reroute Travel-Time Estimation | 0/2 | Not started | - |
+| 5. Reroute Travel-Time Estimation | 2/2 | Complete   | 2026-06-11 |

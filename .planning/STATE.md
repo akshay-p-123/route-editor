@@ -2,15 +2,15 @@
 gsd_state_version: 1.0
 milestone: v1.0
 milestone_name: milestone
-status: ready_to_plan
-stopped_at: Phase 04 complete (4/4) — ready to discuss Phase 5
-last_updated: 2026-06-10T02:48:19.841Z
-last_activity: 2026-06-10
+status: executing
+stopped_at: Phase 05 complete — 05-02 finalized (Task 3 approved + info tooltip deviation)
+last_updated: "2026-06-11T02:46:28.874Z"
+last_activity: 2026-06-11
 progress:
   total_phases: 5
   completed_phases: 4
-  total_plans: 9
-  completed_plans: 9
+  total_plans: 11
+  completed_plans: 10
   percent: 80
 ---
 
@@ -21,16 +21,16 @@ progress:
 See: .planning/PROJECT.md (updated 2026-06-05)
 
 **Core value:** Route modifications are exportable as valid GTFS and informed by real-world trip time data — shareable in a standard format and grounded in actual delay/travel-time reality
-**Current focus:** Phase 5 — reroute travel time estimation
+**Current focus:** Phase 05 — reroute-travel-time-estimation
 
 ## Current Position
 
-Phase: 5
-Plan: Not started
-Status: Ready to plan
-Last activity: 2026-06-10
+Phase: 05 (reroute-travel-time-estimation) — EXECUTING
+Plan: 2 of 2
+Status: Ready to execute
+Last activity: 2026-06-11
 
-Progress: [██████████] 100%
+Progress: [█████████░] 91%
 
 ## Performance Metrics
 
@@ -55,6 +55,7 @@ Progress: [██████████] 100%
 
 *Updated after each plan completion*
 | Phase 04 P04 | 22min | 2 tasks | 5 files |
+| Phase 05 P02 | 30min | 3 tasks | 1 files |
 
 ## Accumulated Context
 
@@ -71,6 +72,7 @@ Recent decisions affecting current work:
 - [Phase 04]: python-multipart added as direct backend dependency for FastAPI multipart upload support (canonical PyPI package)
 - [Phase 04]: _resolve_route_stops: exact stop_id match else synthetic custom_{route_pk}_{stop_sequence} fallback, first trip_id per route as representative sequence
 - [Phase 04]: Multipart-upload TDD tests use app.dependency_overrides for Depends(_user_id), not unittest.mock.patch
+- [Phase 05]: Added an Info icon + native title= tooltip next to the Estimate Travel Time button (deviation, user feedback during Task 3 human-verify) to explain estimate methodology at a glance
 
 ### Pending Todos
 
@@ -93,6 +95,6 @@ None yet.
 
 ## Session Continuity
 
-Last session: 2026-06-10T02:00:11.400Z
-Stopped at: Phase 04 Plan 04 Tasks 1-2 complete; Task 3 (human-verify checkpoint) pending
-Resume file: .planning/phases/04-trip-modifications-round-trip/04-04-PLAN.md
+Last session: 2026-06-11T02:46:08.216Z
+Stopped at: Phase 05 complete — 05-02 finalized (Task 3 approved + info tooltip deviation)
+Resume file: None

@@ -34,6 +34,7 @@ key-files:
 key-decisions:
   - "Stale-state tooltip prefixes the basis tooltip rather than replacing it, per UI-SPEC stale copy + basis table"
   - "Inline param typing used for estimateTravelTime() (no EditorStop import) to avoid any risk of circular import between lib/api.ts and store/editorStore.ts"
+  - "Added an Info icon + native title= tooltip next to the Estimate Travel Time button (deviation, user feedback during Task 3 human-verify) to explain estimate methodology at a glance"
 
 patterns-established:
   - "Toolbar action buttons that depend on a backend round-trip follow: local estimating/error state, getToken()+onAuthRequired guard, try/catch/finally, error strip reusing bg-destructive/10 pattern"
@@ -41,21 +42,21 @@ patterns-established:
 requirements-completed: [EST-01, EST-03]
 
 # Metrics
-duration: ~25min
+duration: ~30min
 completed: 2026-06-11
 ---
 
 # Phase 5 Plan 2: Reroute Travel-Time Estimation UI Summary
 
-Estimate Travel Time toolbar button (EST-01) wired to the 05-01 backend endpoint, with per-stop arrival-delta badges in StopList (EST-03), stale dimming, and an error strip — Tasks 1-2 complete; Task 3 is a human-verify browser checkpoint pending approval.
+Estimate Travel Time toolbar button (EST-01) wired to the 05-01 backend endpoint, with per-stop arrival-delta badges in StopList (EST-03), stale dimming, and an error strip — all 3 tasks complete; Task 3 human-verify approved with a follow-up info tooltip added per user feedback.
 
 ## Performance
 
-- **Duration:** ~25 min (Tasks 1-2)
+- **Duration:** ~30 min (Tasks 1-3)
 - **Started:** 2026-06-11T01:20:00Z
-- **Completed:** Tasks 1-2 at 2026-06-11T01:45:05Z; Task 3 pending
-- **Tasks:** 2 of 3 completed (Task 3 is checkpoint:human-verify, gate=blocking)
-- **Files modified:** 4
+- **Completed:** Tasks 1-2 at 2026-06-11T01:45:05Z; Task 3 (human-verify + deviation) completed 2026-06-11
+- **Tasks:** 3 of 3 completed
+- **Files modified:** 5 (4 from Tasks 1-2 + EditorToolbar.tsx info tooltip deviation)
 
 ## Accomplishments
 - `estimateTravelTime()` client + `TravelTimeEstimate` type added to `frontend/lib/api.ts`, calling `POST /api/gtfs/estimate-travel-time` via the existing wildcard BFF rewrite (no new route handler)
@@ -69,10 +70,10 @@ Each task was committed atomically:
 
 1. **Task 1: API client + store state, actions, and stale-flag wiring** - `4d220c9` (feat)
 2. **Task 2: Toolbar trigger + StopList delta badges (LOCKED UI-SPEC)** - `93a021b` (feat)
+3. **Task 3: Browser human-verify — estimate trigger + per-stop delta badges** - approved (no code change required for the checkpoint itself)
+   - **Deviation: estimate methodology info tooltip** - `74dab51` (feat)
 
 **Plan metadata:** (this commit)
-
-Task 3 (checkpoint:human-verify, gate=blocking) is pending — see "Next Phase Readiness" below.
 
 ## Files Created/Modified
 - `frontend/lib/api.ts` - `TravelTimeEstimate` interface + `estimateTravelTime()` POST client
@@ -87,9 +88,19 @@ Task 3 (checkpoint:human-verify, gate=blocking) is pending — see "Next Phase R
 
 ## Deviations from Plan
 
-None - plan executed exactly as written for Tasks 1-2.
+Tasks 1-2 executed exactly as written.
 
 Note: `frontend/node_modules` did not exist in this worktree at start of execution; ran `npm ci` to install dependencies so `tsc`/`eslint` verification commands could run. This is a pre-existing environment gap (not a plan deviation) and `node_modules` remains gitignored — no commit required.
+
+### Task 3 — In-scope deviation: estimate methodology info tooltip
+
+**1. [User feedback during Task 3 human-verify] Add an info affordance explaining how estimates are computed**
+- **Found during:** Task 3 human-verify checkpoint
+- **Issue:** The checkpoint was approved (badges, stale dimming, and trigger states all match the LOCKED 05-UI-SPEC as built), but the user noted that while per-stop badges have basis tooltips, there is nothing explaining the *overall* estimation methodology near the "Estimate Travel Time" button itself.
+- **Fix:** Added a small `Info` icon (lucide-react, already imported elsewhere in this file) immediately after the Estimate/Update button in `EditorToolbar.tsx`, only rendered when `hasRoute`. Followed the existing codebase convention of native `title=` tooltips (no Tooltip/Popover component exists in this project — see `StopList.tsx` basis tooltips). Tooltip text: "Estimates combine road-network travel time changes (via OSRM) with live MTD departure delay data for each stop. Hover a stop's badge for per-stop details." Styled minimally (`w-3.5 h-3.5 text-muted-foreground shrink-0`) to match other small toolbar icons.
+- **Files modified:** `frontend/components/EditorToolbar.tsx`
+- **Commit:** `74dab51`
+- **Verification:** `cd frontend && npx tsc --noEmit` (clean) and `npx eslint components/EditorToolbar.tsx` (clean, 0 errors/warnings on this file).
 
 ## Known Stubs
 
@@ -114,16 +125,27 @@ None for Tasks 1-2. `npx eslint` reported one pre-existing warning (not error) i
 - Badge colors restricted to `text-orange-600` / `text-emerald-600` / `text-muted-foreground` — confirmed, no `text-orange-500` introduced
 - `frontend/components/RouteMap.tsx` not modified by either task commit
 
+## Verification (Task 3)
+
+- **Browser human-verify checkpoint: APPROVED.** The user ran the `how-to-verify` steps in `05-02-PLAN.md` (load a route, modify stops, click "Estimate Travel Time", confirm spinner/progress bar, per-stop delta badges with correct colors/icons/tooltips, stale dimming + "Update Estimate" pulse on further edits) and confirmed all behavior matches the LOCKED 05-UI-SPEC.
+- User feedback: "approved, but how the delays are estimated are unclear. i think there should be an i card or something" — addressed via the in-scope info-tooltip deviation above.
+- `cd frontend && npx tsc --noEmit` — no errors (post-deviation).
+- `cd frontend && npx eslint components/EditorToolbar.tsx` — 0 errors, 0 warnings (post-deviation).
+
 ## User Setup Required
 
 None - no external service configuration required.
 
 ## Next Phase Readiness
 
-Tasks 1-2 are complete and committed. **Task 3 (checkpoint:human-verify, gate=blocking) is NOT executable by this agent** — it requires starting the dev stack (backend :8000, frontend :3000), signing in, loading a route in a browser, and visually confirming button states + badge rendering + stale dimming per the LOCKED 05-UI-SPEC.
-
-A fresh agent (or the orchestrator) must resume from Task 3 using the `how-to-verify` steps in `.planning/phases/05-reroute-travel-time-estimation/05-02-PLAN.md`. Once approved, this SUMMARY should be updated/finalized and the plan-completion final commit made.
+All 3 tasks complete. Phase 05 (reroute-travel-time-estimation) is now complete — both 05-01 (backend estimate endpoint) and 05-02 (frontend trigger + badges + methodology tooltip) are done and the EST-01/EST-03 requirements are closed.
 
 ---
 *Phase: 05-reroute-travel-time-estimation*
-*Completed: Tasks 1-2 on 2026-06-11; Task 3 pending human-verify*
+*Completed: 2026-06-11 — all 3 tasks done, Task 3 human-verify approved with follow-up info tooltip*
+
+## Self-Check: PASSED
+
+- FOUND: commit 74dab51 (feat(05-02): add estimate methodology info tooltip)
+- FOUND: frontend/components/EditorToolbar.tsx
+- FOUND: .planning/phases/05-reroute-travel-time-estimation/05-02-SUMMARY.md
