@@ -4,6 +4,13 @@ Task 1: Stubs only — estimate_travel_time / _diff_stop_sequences / _EstimateTr
         not yet implemented (RED state via skip-guard). Collection succeeds; running tests
         skips until Task 2 adds the implementation.
 Task 2: Endpoint, diff helper, and Pydantic models implemented — all tests GREEN.
+
+Quick fix 260611-6kt: osrm_delta is now computed per-stop (proposed cumulative vs the
+SAME stop's cumulative on the original route), not against a single grand-total scalar.
+`_osrm_route` is mocked as a single AsyncMock, so both the proposed and original calls
+return the SAME legs object — meaning cumulative[i] == baseline_cumulative[i] whenever
+proposed and original sequences align at index i, which yields zero deltas for
+identical-route tests under the corrected formula.
 """
 
 import pytest
@@ -62,7 +69,12 @@ async def test_returns_estimate_per_stop(sample_saved_routes):
 
 @_requires_impl
 async def test_existing_stop_gets_delay(sample_saved_routes):
-    """Proposed stop also present in original gets upstream_delay_seconds from MTD."""
+    """Proposed stop also present in original gets upstream_delay_seconds from MTD.
+
+    Routes are identical and `_osrm_route` is a single mock returning the same legs
+    for both the proposed and original calls, so osrm_delta == 0 for MTD_1001 under
+    the per-stop formula. basis is "osrm+delay" (0 osrm delta + nonzero upstream delay).
+    """
     original = _route1_stops(sample_saved_routes)
     proposed = _route1_stops(sample_saved_routes)
     body = _EstimateTravelTimeRequest(original_stops=original, proposed_stops=proposed)
@@ -75,12 +87,19 @@ async def test_existing_stop_gets_delay(sample_saved_routes):
 
     mtd_1001_estimate = next(r for r in result if r.stop_id == "MTD_1001")
     assert mtd_1001_estimate.upstream_delay_seconds == 240
+    assert mtd_1001_estimate.osrm_delta_seconds == 0
     assert "delay" in mtd_1001_estimate.basis
 
 
 @_requires_impl
 async def test_new_stop_gets_osrm_delta(sample_saved_routes):
-    """A proposed stop_id not in the original gets osrm_delta_seconds from cumulative OSRM time."""
+    """A proposed stop_id not in the original gets osrm_delta_seconds propagated from
+    the nearest preceding "existing" stop's per-stop osrm_delta.
+
+    MTD_1003 (idx1, "new") propagates from MTD_1001 (idx0, "existing"), whose
+    osrm_delta is 0 (both index-0 stops are MTD_1001, cumulative starts at 0
+    for both proposed and baseline).
+    """
     original = _route1_stops(sample_saved_routes)  # MTD_1001, MTD_1002
     proposed = _route2_stops(sample_saved_routes)  # MTD_1001, MTD_1003, custom (stop_id None)
     body = _EstimateTravelTimeRequest(original_stops=original, proposed_stops=proposed)
@@ -91,14 +110,22 @@ async def test_new_stop_gets_osrm_delta(sample_saved_routes):
          patch.object(gtfs_module, "_get_delays_for_stops", new=AsyncMock(return_value={})):
         result = await estimate_travel_time(body, user_id="user-test-id")
 
+    mtd_1001_estimate = next(r for r in result if r.stop_id == "MTD_1001")
     mtd_1003_estimate = next(r for r in result if r.stop_id == "MTD_1003")
     assert mtd_1003_estimate.osrm_delta_seconds is not None
+    assert mtd_1003_estimate.osrm_delta_seconds == mtd_1001_estimate.osrm_delta_seconds
     assert "osrm" in mtd_1003_estimate.basis
 
 
 @_requires_impl
 async def test_osrm_failure_fallback(sample_saved_routes):
-    """OSRM total failure falls back to 60s/stop without raising; endpoint still returns a result."""
+    """OSRM total failure falls back to 60s/stop without raising; endpoint still returns a result.
+
+    Both the proposed and (identical) original sequences accumulate the same
+    FALLBACK_LEG_SECONDS-per-leg estimate, so stop 1's per-stop delta is 0 but not
+    None — proposed_is_fallback and baseline_is_fallback are both True, so basis
+    is "fallback" rather than "osrm".
+    """
     proposed = _route1_stops(sample_saved_routes)
     body = _EstimateTravelTimeRequest(original_stops=proposed, proposed_stops=proposed)
 
@@ -110,15 +137,20 @@ async def test_osrm_failure_fallback(sample_saved_routes):
     # Stop 0 has no leg data yet when OSRM is unavailable — no fallback delta.
     assert result[0].osrm_delta_seconds is None
     assert result[0].basis == "none"
-    # Stop 1 accumulated the 60s/leg fallback into `cumulative` — it should
-    # surface as a real fallback-derived delta, not be silently dropped.
-    assert result[1].osrm_delta_seconds is not None
+    # Stop 1 accumulated the 60s/leg fallback into `cumulative` and `baseline_cumulative`
+    # identically, so the per-stop delta is 0 but basis reflects the fallback path.
+    assert result[1].osrm_delta_seconds == 0
     assert result[1].basis == "fallback"
 
 
 @_requires_impl
 async def test_all_new_stops_no_original(sample_saved_routes):
-    """Fully custom route (empty original_stops) returns OSRM-only estimates without error."""
+    """Fully custom route (empty original_stops) returns OSRM-only estimates without error.
+
+    With original_stops empty, baseline_cumulative == [] and every proposed stop is
+    classified "new". No "existing" stop is ever seen, so last_osrm_delta stays None
+    and every osrm_delta_seconds is None (basis "none").
+    """
     proposed = _route1_stops(sample_saved_routes)
     body = _EstimateTravelTimeRequest(original_stops=[], proposed_stops=proposed)
 
@@ -131,6 +163,8 @@ async def test_all_new_stops_no_original(sample_saved_routes):
     assert len(result) == len(proposed)
     for r in result:
         assert r.upstream_delay_seconds is None
+        assert r.osrm_delta_seconds is None
+        assert r.basis == "none"
 
 
 @_requires_impl
@@ -157,6 +191,85 @@ async def test_synthetic_ids_excluded_from_delay(sample_saved_routes):
     assert mock_delays.called
     called_ids = mock_delays.call_args[0][0]
     assert "custom_5_2" not in called_ids
+
+
+@_requires_impl
+async def test_no_edits_zero_delta(sample_saved_routes):
+    """No edits (proposed == original) yields zero delta at every stop.
+
+    With identical sequences and a single AsyncMock returning the same legs for
+    both the proposed and original OSRM calls, cumulative[i] == baseline_cumulative[i]
+    for every index — so osrm_delta_seconds == 0 and estimated_arrival_delta_seconds == 0
+    everywhere.
+    """
+    proposed = _route1_stops(sample_saved_routes)
+    original = _route1_stops(sample_saved_routes)
+    body = _EstimateTravelTimeRequest(original_stops=original, proposed_stops=proposed)
+
+    osrm_result = {"legs": [{"duration": 60.0}]}
+
+    with patch.object(gtfs_module, "_osrm_route", new=AsyncMock(return_value=osrm_result)), \
+         patch.object(gtfs_module, "_get_delays_for_stops", new=AsyncMock(return_value={})):
+        result = await estimate_travel_time(body, user_id="user-test-id")
+
+    assert len(result) == len(proposed)
+    for r in result:
+        assert r.osrm_delta_seconds == 0
+        assert r.estimated_arrival_delta_seconds == 0
+
+
+@_requires_impl
+async def test_new_stop_propagates_preceding_delta(sample_saved_routes):
+    """A "new" stop's osrm_delta equals the nearest preceding "existing" stop's osrm_delta.
+
+    original = route1 (MTD_1001 idx0, MTD_1002 idx1).
+    proposed = MTD_1002 (idx0, existing), MTD_1003 (idx1, new), MTD_1001 (idx2, existing).
+
+    With legs [100.0, 50.0] (single mock for both calls):
+    - baseline_cumulative (original) = [0, 100]
+    - proposed cumulative = [0, 100, 150]
+    - idx0 MTD_1002 (existing, j=1): osrm_delta = cumulative[0] - baseline_cumulative[1]
+      = 0 - 100 = -100
+    - idx1 MTD_1003 (new): propagates idx0's delta = -100
+    - idx2 MTD_1001 (existing, j=0): osrm_delta = cumulative[2] - baseline_cumulative[0]
+      = 150 - 0 = 150
+    """
+    original = _route1_stops(sample_saved_routes)  # MTD_1001 (seq0), MTD_1002 (seq1)
+    proposed = [
+        {
+            "stop_sequence": 0,
+            "stop_id": "MTD_1002",
+            "stop_name": "Main & Second",
+            "stop_lat": 40.1110,
+            "stop_lon": -88.2410,
+        },
+        {
+            "stop_sequence": 1,
+            "stop_id": "MTD_1003",
+            "stop_name": "University & Wright",
+            "stop_lat": 40.1120,
+            "stop_lon": -88.2420,
+        },
+        {
+            "stop_sequence": 2,
+            "stop_id": "MTD_1001",
+            "stop_name": "Main & First",
+            "stop_lat": 40.1100,
+            "stop_lon": -88.2400,
+        },
+    ]
+    body = _EstimateTravelTimeRequest(original_stops=original, proposed_stops=proposed)
+
+    osrm_result = {"legs": [{"duration": 100.0}, {"duration": 50.0}]}
+
+    with patch.object(gtfs_module, "_osrm_route", new=AsyncMock(return_value=osrm_result)), \
+         patch.object(gtfs_module, "_get_delays_for_stops", new=AsyncMock(return_value={})):
+        result = await estimate_travel_time(body, user_id="user-test-id")
+
+    mtd_1002_estimate = next(r for r in result if r.stop_id == "MTD_1002")
+    mtd_1003_estimate = next(r for r in result if r.stop_id == "MTD_1003")
+    assert mtd_1002_estimate.osrm_delta_seconds == -100
+    assert mtd_1003_estimate.osrm_delta_seconds == mtd_1002_estimate.osrm_delta_seconds
 
 
 # ── _diff_stop_sequences unit test ───────────────────────────────────────────
