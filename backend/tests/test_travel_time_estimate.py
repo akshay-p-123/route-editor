@@ -107,7 +107,13 @@ async def test_osrm_failure_fallback(sample_saved_routes):
         result = await estimate_travel_time(body, user_id="user-test-id")
 
     assert len(result) == len(proposed)
-    assert any(r.basis == "fallback" for r in result)
+    # Stop 0 has no leg data yet when OSRM is unavailable — no fallback delta.
+    assert result[0].osrm_delta_seconds is None
+    assert result[0].basis == "none"
+    # Stop 1 accumulated the 60s/leg fallback into `cumulative` — it should
+    # surface as a real fallback-derived delta, not be silently dropped.
+    assert result[1].osrm_delta_seconds is not None
+    assert result[1].basis == "fallback"
 
 
 @_requires_impl

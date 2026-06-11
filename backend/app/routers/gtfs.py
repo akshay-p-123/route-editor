@@ -1123,8 +1123,12 @@ async def estimate_travel_time(
         is_existing = classifications[i] == "existing"
 
         osrm_delta: int | None = None
-        if osrm_result is not None or i == 0:
+        if osrm_result is not None:
             osrm_delta = int(round(cumulative - baseline_total))
+        elif i > 0:
+            # OSRM failed but we still accumulated a 60s/leg fallback estimate
+            osrm_delta = int(round(cumulative - baseline_total))
+        # i == 0 with osrm_result is None: leave osrm_delta as None (no leg data yet)
 
         upstream_delay: int | None = None
         if is_existing:
