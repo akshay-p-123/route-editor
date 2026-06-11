@@ -3,6 +3,7 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   serverExternalPackages: ["maplibre-gl"],
   output: "standalone",
+  allowedDevOrigins: ["159.89.54.105"],
   async rewrites() {
     // BACKEND_URL is server-side only — never exposed to the browser.
     // The browser always calls the Next.js server (same origin).
