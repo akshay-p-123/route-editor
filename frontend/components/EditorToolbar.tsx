@@ -3,11 +3,11 @@
 import { useState, useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { useEditorStore } from "@/store/editorStore";
-import { savedRoutes, exportPng, type RoutePayload, type ExportPayload, type Reroute } from "@/lib/api";
+import { savedRoutes, exportPng, estimateTravelTime, type RoutePayload, type ExportPayload, type Reroute } from "@/lib/api";
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw, Copy, Pencil, FileInput } from "lucide-react";
+import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw, Copy, Pencil, FileInput, Clock } from "lucide-react";
 import TripModImportModal from "@/components/TripModImportModal";
 
 interface EditorToolbarProps {
@@ -31,6 +31,9 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
     setRoutePreviewEnabled,
     isSuspiciousRoute,
     isRouteComputing,
+    travelTimeEstimates,
+    travelTimeEstimatesStale,
+    setTravelTimeEstimates,
     markSaved,
     reset,
     undo,
@@ -50,6 +53,8 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
 
   const [saving, setSaving] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [estimating, setEstimating] = useState(false);
+  const [estimateError, setEstimateError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [showCopyDialog, setShowCopyDialog] = useState(false);
   const [copyName, setCopyName] = useState("");
@@ -252,6 +257,22 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
     }
   }
 
+  async function handleEstimateTravelTime() {
+    setEstimating(true);
+    setEstimateError(null);
+    try {
+      const token = await getToken();
+      if (!token) { onAuthRequired(); return; }
+      const result = await estimateTravelTime(originalStops, stops, token);
+      setTravelTimeEstimates(result);
+    } catch (err) {
+      setEstimateError("Couldn't estimate travel time — OSRM or MTD data unavailable. Try again in a moment.");
+      console.error(err);
+    } finally {
+      setEstimating(false);
+    }
+  }
+
   if (!hasRoute) {
     return (
       <div className="h-14 border-b flex items-center px-4 gap-3 bg-background">
@@ -372,6 +393,40 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
             );
           })()}
 
+          {/* Estimate Travel Time trigger */}
+          {(() => {
+            const tooFewStops = stops.length < 2;
+            const hasEstimate = travelTimeEstimates !== null;
+            const isStale = hasEstimate && travelTimeEstimatesStale;
+            return (
+              <Button
+                size="sm"
+                variant={hasEstimate ? "outline" : "default"}
+                onClick={handleEstimateTravelTime}
+                disabled={estimating || tooFewStops}
+                title={tooFewStops ? "Add at least 2 stops to estimate travel time" : undefined}
+                className={
+                  isStale
+                    ? "border-orange-400 bg-orange-50 text-orange-700 hover:bg-orange-100 animate-pulse"
+                    : ""
+                }
+              >
+                {estimating
+                  ? <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" />
+                  : isStale
+                  ? <RefreshCw className="w-3.5 h-3.5 mr-1" />
+                  : <Clock className="w-3.5 h-3.5 mr-1" />}
+                {estimating
+                  ? "Estimating…"
+                  : isStale
+                  ? "Update Estimate"
+                  : hasEstimate
+                  ? "Re-estimate"
+                  : "Estimate Travel Time"}
+              </Button>
+            );
+          })()}
+
           <Button
             size="sm"
             variant="outline"
@@ -444,6 +499,16 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         </div>
       )}
 
+      {/* Estimate error strip */}
+      {estimateError && (
+        <div className="bg-destructive/10 border-b border-destructive/20 px-4 py-1.5 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-destructive shrink-0" />
+          <span className="text-xs text-destructive">
+            {estimateError}
+          </span>
+        </div>
+      )}
+
       {/* Warning strip — informational, does not block save */}
       {warnings.length > 0 && isValid && !saveError && (
         <div className="bg-amber-50 border-b border-amber-200 px-4 py-1.5 flex items-center gap-2">
@@ -470,7 +535,7 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         </div>
       )}
 
-      {exporting && (
+      {(exporting || estimating) && (
         <div className="h-0.5 overflow-hidden bg-gray-200">
           <div
             className="h-full w-[35%] bg-blue-500"

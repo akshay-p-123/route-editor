@@ -21,8 +21,22 @@ import { mtd, type StopSearchResult } from "@/lib/api"; // mtd used in StopRepla
 import type { ValidationError } from "@/lib/validation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
-import { GripVertical, X, MapPin, Pencil, AlertTriangle, CheckCheck } from "lucide-react";
+import { GripVertical, X, MapPin, Pencil, AlertTriangle, CheckCheck, ArrowUp, ArrowDown, Minus } from "lucide-react";
 import StopSearch from "@/components/StopSearch";
+
+// ── Travel-time delta formatting ──────────────────────────────────────────────
+
+/** Format an arrival delta in seconds as a compact duration string (e.g. "+2m 15s", "-30s", "on time"). */
+function formatDelta(seconds: number): string {
+  const abs = Math.abs(seconds);
+  if (abs <= 30) return "on time";
+  const sign = seconds > 0 ? "+" : "-";
+  const m = Math.floor(abs / 60);
+  const s = abs % 60;
+  if (m > 0 && s > 0) return `${sign}${m}m ${s}s`;
+  if (m > 0) return `${sign}${m}m`;
+  return `${sign}${s}s`;
+}
 
 // ── Inline stop replacement ───────────────────────────────────────────────────
 
@@ -114,7 +128,7 @@ function SortableStop({
   onEndEdit: () => void;
   stopIssues: ValidationError[];
 }) {
-  const { removeStop, replaceStop, setSelectedStopId, selectedStopId, originalStops, dismissWarning } =
+  const { removeStop, replaceStop, setSelectedStopId, selectedStopId, originalStops, dismissWarning, travelTimeEstimates, travelTimeEstimatesStale } =
     useEditorStore();
   const id = stop.stop_id ?? `custom-${index}`;
   const {
@@ -139,6 +153,47 @@ function SortableStop({
   const hasError   = stopIssues.some((e) => e.severity === "error");
   const hasWarning = !hasError && stopIssues.some((e) => e.severity === "warning");
   const firstIssue = stopIssues[0];
+
+  // Travel-time estimate badge for this stop
+  const estimate = travelTimeEstimates?.find((e) => e.stop_sequence === stop.stop_sequence);
+  let deltaColorClass = "text-muted-foreground";
+  let DeltaIcon = Minus;
+  let tooltipText = "";
+  if (estimate) {
+    const delta = estimate.estimated_arrival_delta_seconds;
+    if (delta > 30) {
+      deltaColorClass = "text-orange-600";
+      DeltaIcon = ArrowUp;
+    } else if (delta < -30) {
+      deltaColorClass = "text-emerald-600";
+      DeltaIcon = ArrowDown;
+    } else {
+      deltaColorClass = "text-muted-foreground";
+      DeltaIcon = Minus;
+    }
+
+    const osrmDeltaText = estimate.osrm_delta_seconds === null ? "none" : formatDelta(estimate.osrm_delta_seconds);
+    const upstreamDelayText = estimate.upstream_delay_seconds === null ? "none" : formatDelta(estimate.upstream_delay_seconds);
+    switch (estimate.basis) {
+      case "osrm+delay":
+        tooltipText = `Driving time change: ${osrmDeltaText}, plus current delay: ${upstreamDelayText} (live MTD data)`;
+        break;
+      case "osrm":
+        tooltipText = `Driving time change: ${osrmDeltaText} (no live delay data for this stop)`;
+        break;
+      case "delay":
+        tooltipText = `Current delay: ${upstreamDelayText} (live MTD data; no route-change impact at this stop)`;
+        break;
+      case "fallback":
+        tooltipText = "Approximate — this route has many stops, so travel time is estimated";
+        break;
+      default:
+        tooltipText = "";
+    }
+    if (travelTimeEstimatesStale) {
+      tooltipText = `Estimate may be outdated — route was edited since this was calculated. Click Estimate Travel Time to refresh.${tooltipText ? ` ${tooltipText}` : ""}`;
+    }
+  }
 
   function handleReplace(result: StopSearchResult) {
     if (!stop.stop_id) return;
@@ -242,6 +297,24 @@ function SortableStop({
         >
           <X className="w-3.5 h-3.5" />
         </button>
+      )}
+
+      {/* Travel-time delta badge — only rendered when an estimate exists for this stop */}
+      {estimate && estimate.basis !== "none" && (
+        <span
+          className={`flex items-center gap-1 text-xs font-normal shrink-0 px-2 py-1 rounded ${
+            travelTimeEstimatesStale ? "opacity-50 " : ""
+          }${deltaColorClass}`}
+          title={tooltipText}
+        >
+          <DeltaIcon className="w-3 h-3" />
+          {formatDelta(estimate.estimated_arrival_delta_seconds)}
+        </span>
+      )}
+      {estimate && estimate.basis === "none" && (
+        <span className="text-xs text-muted-foreground/50 shrink-0" title="No estimate available for this stop">
+          —
+        </span>
       )}
     </li>
   );
