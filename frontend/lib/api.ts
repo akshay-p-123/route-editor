@@ -266,6 +266,50 @@ export async function exportTripMod(
   return res.blob();
 }
 
+/** Per-stop estimated arrival delta returned by POST /api/gtfs/estimate-travel-time. */
+export interface TravelTimeEstimate {
+  stop_sequence: number;
+  stop_id: string | null;
+  stop_name: string;
+  osrm_delta_seconds: number | null;
+  upstream_delay_seconds: number | null;
+  estimated_arrival_delta_seconds: number;
+  basis: "osrm" | "delay" | "osrm+delay" | "fallback" | "none";
+}
+
+/** Estimate per-stop travel time impact of a proposed stop sequence vs. the original. */
+export async function estimateTravelTime(
+  originalStops: { stop_sequence: number; stop_id: string | null; stop_name: string; stop_lat: number; stop_lon: number }[],
+  proposedStops: { stop_sequence: number; stop_id: string | null; stop_name: string; stop_lat: number; stop_lon: number }[],
+  token: string,
+  tripId?: string
+): Promise<TravelTimeEstimate[]> {
+  return fetchJSON<TravelTimeEstimate[]>(
+    "/api/gtfs/estimate-travel-time",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        original_stops: originalStops.map((s) => ({
+          stop_sequence: s.stop_sequence,
+          stop_id: s.stop_id,
+          stop_name: s.stop_name,
+          stop_lat: s.stop_lat,
+          stop_lon: s.stop_lon,
+        })),
+        proposed_stops: proposedStops.map((s) => ({
+          stop_sequence: s.stop_sequence,
+          stop_id: s.stop_id,
+          stop_name: s.stop_name,
+          stop_lat: s.stop_lat,
+          stop_lon: s.stop_lon,
+        })),
+        trip_id: tripId ?? null,
+      }),
+    },
+    token
+  );
+}
+
 // ── MTD v3 Types ──────────────────────────────────────────────────────────────
 
 /** Standard v3 response envelope. */

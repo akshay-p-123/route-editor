@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import type { RouteGroup, StopSearchResult } from "@/lib/api";
+import type { RouteGroup, StopSearchResult, TravelTimeEstimate } from "@/lib/api";
 import { validateRoute, type ValidationError } from "@/lib/validation";
 
 export interface EditorStop {
@@ -36,6 +36,8 @@ interface EditorState {
   isRouteComputing: boolean;
   dismissedWarnings: Set<string>;
   history: HistoryEntry[];
+  travelTimeEstimates: TravelTimeEstimate[] | null;
+  travelTimeEstimatesStale: boolean;
 
   loadRoute: (group: RouteGroup, direction: string, stops: EditorStop[], shapeId: string) => void;
   startCustomRoute: (meta: { name: string; shortName: string; color: string }) => void;
@@ -53,6 +55,8 @@ interface EditorState {
   undo: () => void;
   markSaved: (id: string) => void;
   reset: () => void;
+  setTravelTimeEstimates: (estimates: TravelTimeEstimate[]) => void;
+  clearTravelTimeEstimates: () => void;
 }
 
 function withValidation(stops: EditorStop[], dismissed: Set<string> = new Set()): {
@@ -92,6 +96,8 @@ const initial = {
   isRouteComputing: false,
   dismissedWarnings: new Set<string>(),
   history: [] as HistoryEntry[],
+  travelTimeEstimates: null as TravelTimeEstimate[] | null,
+  travelTimeEstimatesStale: false,
 };
 
 export const useEditorStore = create<EditorState>((set, get) => ({
@@ -112,6 +118,8 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isSuspiciousRoute: false,
       dismissedWarnings: new Set(),
       history: [],
+      travelTimeEstimates: null,
+      travelTimeEstimatesStale: false,
       ...withValidation(stops),
     });
   },
@@ -131,13 +139,15 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isSuspiciousRoute: false,
       dismissedWarnings: new Set(),
       history: [],
+      travelTimeEstimates: null,
+      travelTimeEstimatesStale: false,
       ...withValidation([]),
     });
   },
 
   setStops(stops) {
     const history = snapshot(get());
-    set({ stops, isDirty: true, routePreviewEnabled: false, history, ...withValidation(stops, get().dismissedWarnings) });
+    set({ stops, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, history, ...withValidation(stops, get().dismissedWarnings) });
   },
 
   addStop(stop, afterIndex) {
@@ -161,7 +171,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     next = next.map((s, i) => ({ ...s, stop_sequence: i }));
 
     const history = snapshot(get());
-    set({ stops: next, isDirty: true, routePreviewEnabled: false, selectedStopId: stop.stopId, history, ...withValidation(next, get().dismissedWarnings) });
+    set({ stops: next, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, selectedStopId: stop.stopId, history, ...withValidation(next, get().dismissedWarnings) });
   },
 
   removeStop(stopId) {
@@ -170,7 +180,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       .map((s, i) => ({ ...s, stop_sequence: i }));
 
     const history = snapshot(get());
-    set({ stops: next, isDirty: true, routePreviewEnabled: false, history, ...withValidation(next, get().dismissedWarnings) });
+    set({ stops: next, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, history, ...withValidation(next, get().dismissedWarnings) });
   },
 
   replaceStop(oldStopId, replacement) {
@@ -196,7 +206,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     };
 
     const history = snapshot(get());
-    set({ stops: updated, isDirty: true, routePreviewEnabled: false, dismissedWarnings: dismissed, history, ...withValidation(updated, dismissed) });
+    set({ stops: updated, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, dismissedWarnings: dismissed, history, ...withValidation(updated, dismissed) });
   },
 
   moveStop(fromIndex, toIndex) {
@@ -210,7 +220,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     const next = arr.map((s, i) => ({ ...s, stop_sequence: i }));
 
     const history = snapshot(get());
-    set({ stops: next, isDirty: true, routePreviewEnabled: false, history, ...withValidation(next, get().dismissedWarnings) });
+    set({ stops: next, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, history, ...withValidation(next, get().dismissedWarnings) });
   },
 
   setSelectedStopId(id) {
@@ -250,6 +260,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
       isDirty: prev.isDirty,
       dismissedWarnings: prev.dismissedWarnings,
       routePreviewEnabled: false,
+      travelTimeEstimatesStale: true,
       ...withValidation(prev.stops, prev.dismissedWarnings),
     });
   },
@@ -266,5 +277,13 @@ export const useEditorStore = create<EditorState>((set, get) => ({
 
   reset() {
     set(initial);
+  },
+
+  setTravelTimeEstimates(estimates) {
+    set({ travelTimeEstimates: estimates, travelTimeEstimatesStale: false });
+  },
+
+  clearTravelTimeEstimates() {
+    set({ travelTimeEstimates: null, travelTimeEstimatesStale: false });
   },
 }));
