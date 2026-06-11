@@ -340,7 +340,7 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         {/* Warning badge */}
         {warnings.length > 0 && (
           <span
-            className="flex items-center gap-1 text-xs text-amber-500 font-medium shrink-0"
+            className="flex items-center gap-1 text-xs text-orange-500 font-medium shrink-0"
             title={warnings.map((e) => e.message).join("\n")}
           >
             <AlertTriangle className="w-3.5 h-3.5" />
@@ -350,7 +350,7 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
 
         {isSuspiciousRoute && routePreviewEnabled && (
           <span
-            className="flex items-center gap-1 text-xs text-amber-500 font-medium shrink-0"
+            className="flex items-center gap-1 text-xs text-orange-500 font-medium shrink-0"
             title="OSRM couldn't find a clean path — route shown as an approximation"
           >
             <AlertTriangle className="w-3.5 h-3.5" />
@@ -359,7 +359,7 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
         )}
 
         {isDirty && isValid && !isSuspiciousRoute && (
-          <span className="text-xs text-amber-500 font-medium shrink-0">• Unsaved</span>
+          <span className="text-xs text-orange-500 font-medium shrink-0">• Unsaved</span>
         )}
 
         <div className="ml-auto flex items-center gap-2">
@@ -380,7 +380,7 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
                 }
                 className={
                   needsRefresh
-                    ? "border border-amber-400 bg-amber-50 text-amber-700 hover:bg-amber-100 hover:text-amber-800 shadow-sm shadow-amber-200 animate-pulse"
+                    ? "border border-orange-400 bg-orange-50 text-orange-700 hover:bg-orange-100 hover:text-orange-800 shadow-sm shadow-orange-200 animate-pulse"
                     : ""
                 }
               >
@@ -521,9 +521,9 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
 
       {/* Warning strip — informational, does not block save */}
       {warnings.length > 0 && isValid && !saveError && (
-        <div className="bg-amber-50 border-b border-amber-200 px-4 py-1.5 flex items-center gap-2">
-          <AlertTriangle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-          <span className="text-xs text-amber-700">
+        <div className="bg-orange-50 border-b border-orange-200 px-4 py-1.5 flex items-center gap-2">
+          <AlertTriangle className="w-3.5 h-3.5 text-orange-500 shrink-0" />
+          <span className="text-xs text-orange-700">
             {firstWarning?.message}
             {warnings.length > 1 ? ` (+${warnings.length - 1} more)` : ""}
           </span>
