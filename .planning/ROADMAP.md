@@ -88,7 +88,9 @@ Decimal phases appear between their surrounding integers in numeric order.
   1. User can trigger a travel-time estimate for a proposed stop sequence change from within the editor without leaving the route editing workflow
   2. Backend computes per-stop estimated arrival delta by combining OSRM road travel time for new/moved stops with upstream MTD departure delay for existing stops
   3. Editor displays per-stop estimated arrival delta values alongside the existing route preview for the proposed modification
-**Plans**: TBD
+**Plans**: 2 plans
+  - [ ] 05-01-PLAN.md — Backend EST-02 slice: POST /api/gtfs/estimate-travel-time composing _osrm_route + _get_delays_for_stops, _diff_stop_sequences, Pydantic models, Wave 0 test scaffold (6 unit tests)
+  - [ ] 05-02-PLAN.md — Frontend EST-01/EST-03 slice: estimateTravelTime client + store state/stale-wiring + Estimate Travel Time toolbar button + per-stop delta badges + browser human-verify
 **UI hint**: yes
 
 ## Progress
@@ -102,4 +104,4 @@ Phases execute in numeric order: 1 → 2 → 3 → 4 → 5
 | 2. GTFS Export | 3/3 | Complete   | 2026-06-08 |
 | 3. Trip Update Integration | 1/1 | Complete   | 2026-06-08 |
 | 4. Trip Modifications Round-Trip | 4/4 | Complete   | 2026-06-10 |
-| 5. Reroute Travel-Time Estimation | 0/TBD | Not started | - |
+| 5. Reroute Travel-Time Estimation | 0/2 | Not started | - |
