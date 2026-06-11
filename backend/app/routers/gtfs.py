@@ -1093,12 +1093,33 @@ async def estimate_travel_time(
     osrm_result = await _osrm_route(proposed_sorted) if len(proposed_sorted) >= 2 else None
     leg_durations = [leg["duration"] for leg in osrm_result["legs"]] if osrm_result else []
 
-    # Baseline cumulative OSRM travel time for the original sequence
-    baseline_total = 0.0
+    # Baseline per-stop cumulative OSRM travel time for the original sequence
+    baseline_result = None
     if len(original_sorted) >= 2:
         baseline_result = await _osrm_route(original_sorted)
-        if baseline_result:
-            baseline_total = sum(leg["duration"] for leg in baseline_result["legs"])
+
+    if len(original_sorted) < 2:
+        baseline_cumulative: list[float] = [0.0] * len(original_sorted)
+    else:
+        baseline_legs = baseline_result["legs"] if baseline_result else []
+        baseline_cumulative = []
+        running = 0.0
+        for k in range(len(original_sorted)):
+            if k > 0:
+                if k - 1 < len(baseline_legs):
+                    running += baseline_legs[k - 1]["duration"]
+                else:
+                    running += FALLBACK_LEG_SECONDS
+            baseline_cumulative.append(running)
+
+    # First index of each original stop_id, for per-stop baseline comparison
+    original_index_by_stop_id: dict[str, int] = {}
+    for idx, stop in enumerate(original_sorted):
+        stop_id = stop.get("stop_id")
+        if stop_id and stop_id not in original_index_by_stop_id:
+            original_index_by_stop_id[stop_id] = idx
+
+    last_osrm_delta: int | None = None
 
     # Existing stop_ids passed to MTD delay lookup (V5 defense-in-depth — T-05-01)
     existing_stop_ids = [
@@ -1122,22 +1143,27 @@ async def estimate_travel_time(
         is_existing = classifications[i] == "existing"
 
         osrm_delta: int | None = None
-        if osrm_result is not None:
-            osrm_delta = int(round(cumulative - baseline_total))
-        elif i > 0:
-            # OSRM failed but we still accumulated a 60s/leg fallback estimate
-            osrm_delta = int(round(cumulative - baseline_total))
-        # i == 0 with osrm_result is None: leave osrm_delta as None (no leg data yet)
+        if is_existing:
+            if i > 0 or osrm_result is not None:
+                j = original_index_by_stop_id[stop["stop_id"]]
+                osrm_delta = int(round(cumulative - baseline_cumulative[j]))
+                last_osrm_delta = osrm_delta
+            # i == 0 with osrm_result is None: leave osrm_delta as None (no leg data yet)
+        else:
+            osrm_delta = last_osrm_delta
 
         upstream_delay: int | None = None
         if is_existing:
             upstream_delay = delays.get(stop["stop_id"])
 
+        proposed_is_fallback = osrm_result is None
+        baseline_is_fallback = len(original_sorted) >= 2 and baseline_result is None
+
         if osrm_delta is not None and upstream_delay is not None:
             basis = "osrm+delay"
         elif upstream_delay is not None:
             basis = "delay"
-        elif osrm_result is not None:
+        elif osrm_delta is not None and not proposed_is_fallback and not baseline_is_fallback:
             basis = "osrm"
         elif osrm_delta is not None:
             basis = "fallback"
