@@ -260,11 +260,14 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
   async function handleEstimateTravelTime() {
     setEstimating(true);
     setEstimateError(null);
+    const requestStops = stops;
     try {
       const token = await getToken();
       if (!token) { onAuthRequired(); return; }
-      const result = await estimateTravelTime(originalStops, stops, token);
-      setTravelTimeEstimates(result);
+      const result = await estimateTravelTime(originalStops, requestStops, token);
+      if (useEditorStore.getState().stops === requestStops) {
+        setTravelTimeEstimates(result);
+      }
     } catch (err) {
       setEstimateError("Couldn't estimate travel time — OSRM or MTD data unavailable. Try again in a moment.");
       console.error(err);
