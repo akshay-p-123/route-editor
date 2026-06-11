@@ -93,8 +93,14 @@ None yet.
 | Export | VALID-02: User-configurable service date window | v2 | Pre-roadmap |
 | Export | EXT-01/02: Fare data, transfers.txt | v2 | Pre-roadmap |
 
+## Quick Tasks Completed
+
+| Quick ID | Description | Tasks | Status |
+|----------|-------------|-------|--------|
+| 260611-6kt | Fix EST-02 arrival-delta formula (per-stop baseline_cumulative, new-stop propagation, tooltip wording) | 3/3 | Complete |
+
 ## Session Continuity
 
 Last session: 2026-06-11T02:46:08.216Z
-Stopped at: Phase 05 complete — 05-02 finalized (Task 3 approved + info tooltip deviation)
+Stopped at: Phase 05 complete — 05-02 finalized (Task 3 approved + info tooltip deviation); quick task 260611-6kt (EST-02 formula fix) complete
 Resume file: None
