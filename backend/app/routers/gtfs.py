@@ -1027,7 +1027,6 @@ class _EstimateStopIn(BaseModel):
 class _EstimateTravelTimeRequest(BaseModel):
     original_stops: list[_EstimateStopIn]
     proposed_stops: list[_EstimateStopIn]
-    trip_id: str | None = None
 
 
 class _StopEstimate(BaseModel):

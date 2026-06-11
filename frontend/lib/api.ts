@@ -281,8 +281,7 @@ export interface TravelTimeEstimate {
 export async function estimateTravelTime(
   originalStops: { stop_sequence: number; stop_id: string | null; stop_name: string; stop_lat: number; stop_lon: number }[],
   proposedStops: { stop_sequence: number; stop_id: string | null; stop_name: string; stop_lat: number; stop_lon: number }[],
-  token: string,
-  tripId?: string
+  token: string
 ): Promise<TravelTimeEstimate[]> {
   return fetchJSON<TravelTimeEstimate[]>(
     "/api/gtfs/estimate-travel-time",
@@ -303,7 +302,6 @@ export async function estimateTravelTime(
           stop_lat: s.stop_lat,
           stop_lon: s.stop_lon,
         })),
-        trip_id: tripId ?? null,
       }),
     },
     token
