@@ -7,7 +7,7 @@ import { savedRoutes, exportPng, estimateTravelTime, type RoutePayload, type Exp
 import { createClient } from "@/lib/supabase";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw, Copy, Pencil, FileInput, Clock } from "lucide-react";
+import { Save, Download, RotateCcw, Undo2, AlertTriangle, Eye, EyeOff, Loader2, RefreshCw, Copy, Pencil, FileInput, Clock, Info } from "lucide-react";
 import TripModImportModal from "@/components/TripModImportModal";
 
 interface EditorToolbarProps {
@@ -426,6 +426,13 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
               </Button>
             );
           })()}
+
+          <span
+            className="shrink-0 text-muted-foreground"
+            title="Estimates combine road-network travel time changes (via OSRM) with live MTD departure delay data for each stop. Hover a stop's badge for per-stop details."
+          >
+            <Info className="w-3.5 h-3.5" />
+          </span>
 
           <Button
             size="sm"
