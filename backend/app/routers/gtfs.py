@@ -1011,6 +1011,151 @@ async def _get_delays_for_stops(stop_ids: list[str]) -> dict[str, int]:
     return delays
 
 
+# ── Travel-time estimation models (EST-02) ──────────────────────────────────
+
+FALLBACK_LEG_SECONDS = 60.0
+
+
+class _EstimateStopIn(BaseModel):
+    stop_sequence: int
+    stop_id: str | None = None
+    stop_name: str
+    stop_lat: float
+    stop_lon: float
+
+
+class _EstimateTravelTimeRequest(BaseModel):
+    original_stops: list[_EstimateStopIn]
+    proposed_stops: list[_EstimateStopIn]
+    trip_id: str | None = None
+
+
+class _StopEstimate(BaseModel):
+    stop_sequence: int
+    stop_id: str | None
+    stop_name: str
+    osrm_delta_seconds: int | None
+    upstream_delay_seconds: int | None
+    estimated_arrival_delta_seconds: int
+    basis: str
+
+
+def _diff_stop_sequences(original: list[dict], proposed: list[dict]) -> list[str]:
+    """Classify each proposed stop as "existing" or "new" relative to original.
+
+    A proposed stop is "existing" when its stop_id is truthy, present in the
+    original stop_id set, and is not a synthetic custom_* id. This is the
+    single source of existing/new classification for the estimate endpoint.
+    """
+    original_ids = {s["stop_id"] for s in original if s.get("stop_id")}
+
+    classifications: list[str] = []
+    for stop in proposed:
+        stop_id = stop.get("stop_id")
+        if (
+            stop_id
+            and stop_id in original_ids
+            and not stop_id.startswith("custom_")
+        ):
+            classifications.append("existing")
+        else:
+            classifications.append("new")
+    return classifications
+
+
+@router.post("/estimate-travel-time")
+async def estimate_travel_time(
+    body: _EstimateTravelTimeRequest,
+    user_id: str = Depends(_user_id),
+) -> list[_StopEstimate]:
+    """Return one estimated arrival delta per proposed stop, ordered by stop_sequence.
+
+    Composes two existing helpers:
+    - `_osrm_route` — cumulative road travel time for the proposed and original
+      sequences, used to derive an `osrm_delta_seconds` for new/moved stops.
+    - `_get_delays_for_stops` — MTD real-time departure delay, used to derive
+      `upstream_delay_seconds` for stops also present in the original sequence.
+
+    OSRM failure degrades to a 60s/stop fallback (mirrors `_build_stop_times_df`).
+    Synthetic custom_* stop_ids are never forwarded to MTD (T-05-01).
+    """
+    proposed_sorted = sorted(
+        (s.model_dump() for s in body.proposed_stops),
+        key=lambda s: s["stop_sequence"],
+    )
+    original_sorted = sorted(
+        (s.model_dump() for s in body.original_stops),
+        key=lambda s: s["stop_sequence"],
+    )
+
+    classifications = _diff_stop_sequences(original_sorted, proposed_sorted)
+
+    # Cumulative OSRM travel time for the proposed sequence
+    osrm_result = await _osrm_route(proposed_sorted) if len(proposed_sorted) >= 2 else None
+    leg_durations = [leg["duration"] for leg in osrm_result["legs"]] if osrm_result else []
+
+    # Baseline cumulative OSRM travel time for the original sequence
+    baseline_total = 0.0
+    if len(original_sorted) >= 2:
+        baseline_result = await _osrm_route(original_sorted)
+        if baseline_result:
+            baseline_total = sum(leg["duration"] for leg in baseline_result["legs"])
+
+    # Existing stop_ids passed to MTD delay lookup (V5 defense-in-depth — T-05-01)
+    existing_stop_ids = [
+        proposed_sorted[i]["stop_id"]
+        for i in range(len(proposed_sorted))
+        if classifications[i] == "existing"
+        and proposed_sorted[i]["stop_id"]
+        and _STOP_ID_RE.match(proposed_sorted[i]["stop_id"])
+    ]
+    delays = await _get_delays_for_stops(existing_stop_ids) if existing_stop_ids else {}
+
+    results: list[_StopEstimate] = []
+    cumulative = 0.0
+    for i, stop in enumerate(proposed_sorted):
+        if i > 0:
+            if i - 1 < len(leg_durations):
+                cumulative += leg_durations[i - 1]
+            else:
+                cumulative += FALLBACK_LEG_SECONDS
+
+        is_existing = classifications[i] == "existing"
+
+        osrm_delta: int | None = None
+        if osrm_result is not None or i == 0:
+            osrm_delta = int(round(cumulative - baseline_total))
+
+        upstream_delay: int | None = None
+        if is_existing:
+            upstream_delay = delays.get(stop["stop_id"])
+
+        if osrm_delta is not None and upstream_delay is not None:
+            basis = "osrm+delay"
+        elif upstream_delay is not None:
+            basis = "delay"
+        elif osrm_result is not None:
+            basis = "osrm"
+        elif osrm_delta is not None:
+            basis = "fallback"
+        else:
+            basis = "none"
+
+        estimated_delta = (osrm_delta or 0) + (upstream_delay or 0)
+
+        results.append(_StopEstimate(
+            stop_sequence=stop["stop_sequence"],
+            stop_id=stop["stop_id"],
+            stop_name=stop["stop_name"],
+            osrm_delta_seconds=osrm_delta,
+            upstream_delay_seconds=upstream_delay,
+            estimated_arrival_delta_seconds=estimated_delta,
+            basis=basis,
+        ))
+
+    return results
+
+
 @router.get("/trip-updates")
 async def get_trip_updates(
     stop_ids: str,
