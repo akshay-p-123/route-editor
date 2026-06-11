@@ -431,8 +431,8 @@ export default function EditorToolbar({ onAuthRequired }: EditorToolbarProps) {
           })()}
 
           <span
-            className="shrink-0 text-muted-foreground"
-            title="Estimates combine road-network travel time changes (via OSRM) with live MTD departure delay data for each stop. Hover a stop's badge for per-stop details."
+            className="shrink-0 text-muted-foreground hover:text-foreground transition-colors cursor-help"
+            title="Each stop's badge shows how much later/earlier you'd arrive there compared to the original route, combining road-network travel time differences (via OSRM) with live MTD departure delay. Hover a stop's badge for details."
           >
             <Info className="w-3.5 h-3.5" />
           </span>

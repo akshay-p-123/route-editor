@@ -180,16 +180,16 @@ function SortableStop({
     const upstreamDelayText = estimate.upstream_delay_seconds === null ? "none" : formatDelta(estimate.upstream_delay_seconds);
     switch (estimate.basis) {
       case "osrm+delay":
-        tooltipText = `Driving time change: ${osrmDeltaText}, plus current delay: ${upstreamDelayText} (live MTD data)`;
+        tooltipText = `Would arrive ${osrmDeltaText} vs the original route at this stop, plus current live delay: ${upstreamDelayText} (MTD)`;
         break;
       case "osrm":
-        tooltipText = `Driving time change: ${osrmDeltaText} (no live delay data for this stop)`;
+        tooltipText = `Would arrive ${osrmDeltaText} vs the original route at this stop (no live delay data)`;
         break;
       case "delay":
-        tooltipText = `Current delay: ${upstreamDelayText} (live MTD data; no route-change impact at this stop)`;
+        tooltipText = `Current live delay: ${upstreamDelayText} (MTD) — no change from your edits at this stop`;
         break;
       case "fallback":
-        tooltipText = "Approximate — this route has many stops, so travel time is estimated";
+        tooltipText = `Would arrive ${osrmDeltaText} vs the original route at this stop (approximate — based on a 60s/stop estimate, not live road data)`;
         break;
       default:
         tooltipText = "";
