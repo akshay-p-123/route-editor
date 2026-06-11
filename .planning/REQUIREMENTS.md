@@ -43,7 +43,7 @@
 ### Reroute Travel-Time Estimation
 
 - [x] **EST-01**: User can request travel-time impact estimation for a modified stop sequence from within the editor
-- [ ] **EST-02**: Backend computes per-stop estimated arrival delta using OSRM road travel time (new/moved stops) plus upstream MTD departure delay (existing stops)
+- [x] **EST-02**: Backend computes per-stop estimated arrival delta using OSRM road travel time (new/moved stops) plus upstream MTD departure delay (existing stops)
 - [x] **EST-03**: Frontend displays per-stop estimated arrival delta for the proposed route modification alongside the existing route preview
 
 ## v2 Requirements
@@ -99,7 +99,7 @@
 | TRIPMOD-05 | Phase 4 | Pending |
 | TRIPMOD-06 | Phase 4 | Pending |
 | EST-01 | Phase 5 | Complete |
-| EST-02 | Phase 5 | Pending |
+| EST-02 | Phase 5 | Complete |
 | EST-03 | Phase 5 | Complete |
 
 **Coverage:**
