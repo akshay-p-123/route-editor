@@ -73,28 +73,37 @@ The Export PNG button generates a static map image suitable for sharing with rid
 
 The map uses CARTO Positron tiles with no API key required. A "Back to Champaign" button appears in the top-right corner of the map and highlights blue when the viewport has drifted far enough from the MTD service area to warrant a prompt.
 
+### Travel time estimates
+
+When editing a route that has real-world trip data, the stop list shows per-stop travel time badges. Each badge displays the estimated time from the previous stop based on GTFS-RT trip updates — giving planners a sense of how long each segment actually takes before committing to a modified stop sequence.
+
+### GTFS export
+
+Saved routes and reroutes can be exported as a valid GTFS static feed. The backend builds a complete zip (routes, stops, trips, stop_times, shapes, calendar_dates, feed_info, agency) and returns it as a download. Stop times are estimated from OSRM road-following durations with a 60 s fallback per leg. Shapes are derived from the same OSRM geometry used in the map preview.
+
 ---
 
 ## Tech stack
 
 Frontend: Next.js (App Router), TypeScript, Tailwind CSS, shadcn/ui, Zustand, TanStack Query, react-map-gl with MapLibre GL JS, dnd-kit
 
-Backend: FastAPI (Python), Supabase (Postgres + Auth), staticmaps, Pillow
+Backend: FastAPI (Python), Supabase (Postgres + Auth), staticmaps, Pillow, gtfs-kit, protobuf
 
 Map tiles: CARTO Positron (no API key)
 
-Routing: OSRM public API (road-snapping for the interactive map)
+Routing: OSRM public API (road-snapping for the interactive map and GTFS shape/stop-time estimation)
 
-Transit data: MTD API v3 at api.mtd.dev
+Transit data: MTD API v3 at api.mtd.dev; MTD GTFS static feed; MTD GTFS-RT trip updates
 
 ---
 
 ## Known Issues
 
 - Hopper routes are not yet supported, nor are the many variants an MTD route can have (such as Green)
-- PNG export is still somewhat dubious -- quality isn't perfect after switching from Playwright
 - I've tested route editing/creation quite a bit, but there are definitely still small problems with it
-- Small UI bugs
+- Travel time estimates are dubious
+- Need to strike a better distinction between editing within/outside of a reroute (UX)
+
 
 ## Planned improvements
 
@@ -108,6 +117,8 @@ Transit data: MTD API v3 at api.mtd.dev
 The browser never calls the backend directly. All `/api/*` requests go to the Next.js server, which rewrites them to the backend using a server-side environment variable. The MTD API key and Supabase service role key are never sent to the client.
 
 The backend maintains an in-memory TTL cache in front of the MTD API. Route groups, stops, and trips are cached for one hour. Shape geometry is cached for 24 hours since shapes do not change between schedule releases. Stop search bypasses the cache entirely.
+
+On startup the backend also downloads and parses the MTD GTFS static feed (via gtfs-kit) and stores it in process memory. A background task refreshes it on a configurable interval. The GTFS-RT protobuf feed is fetched once per hour in a separate background task and stored alongside the static feed. Both feeds serve behind 503 guards until the first successful load.
 
 Authentication is stateless. Every request to a protected endpoint includes a Supabase JWT as a Bearer token. The backend verifies it against Supabase using the service role key and extracts the user ID. All database queries are scoped to that user ID so users can only read and modify their own data.
 
