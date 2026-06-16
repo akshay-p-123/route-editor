@@ -185,3 +185,71 @@ export function buildModifiedGeometry(
 
   return coords;
 }
+
+/**
+ * Build OSRM waypoints for a modified route, injecting intermediate shape
+ * points between each consecutive forward stop pair.
+ *
+ * This guides OSRM along the actual bus road, preventing side-road detours,
+ * while still producing real road-following geometry via OSRM. For reversed
+ * pairs (reordered stops) only the stop endpoints are used — OSRM finds its
+ * own path for those segments.
+ *
+ * Returns a flat list of {lat, lon} waypoints ready for routeWithOSRM().
+ * When shapePoints is empty, returns just the stop coordinates.
+ */
+export function buildOsrmWaypoints(
+  stops: EditorStop[],
+  shapePoints: ShapePoint[]
+): Array<{ lat: number; lon: number }> {
+  if (shapePoints.length === 0) {
+    return stops.map((s) => ({ lat: s.stop_lat, lon: s.stop_lon }));
+  }
+
+  const stopIdToIdx = new Map<string, number>();
+  shapePoints.forEach((pt, i) => { if (pt.stopId) stopIdToIdx.set(pt.stopId, i); });
+
+  function resolveIdx(stop: EditorStop): number {
+    if (stop.stop_id) {
+      const known = stopIdToIdx.get(stop.stop_id);
+      if (known !== undefined) return known;
+    }
+    let best = 0, bestDist = Infinity;
+    shapePoints.forEach((pt, i) => {
+      const pLat = Number(pt.coordinates?.latitude ?? 0);
+      const pLon = Number(pt.coordinates?.longitude ?? 0);
+      const d = (pLat - stop.stop_lat) ** 2 + (pLon - stop.stop_lon) ** 2;
+      if (d < bestDist) { bestDist = d; best = i; }
+    });
+    return best;
+  }
+
+  const waypoints: Array<{ lat: number; lon: number }> = [];
+
+  for (let i = 0; i < stops.length; i++) {
+    waypoints.push({ lat: stops[i].stop_lat, lon: stops[i].stop_lon });
+
+    if (i < stops.length - 1) {
+      const fromIdx = resolveIdx(stops[i]);
+      const toIdx = resolveIdx(stops[i + 1]);
+
+      if (fromIdx < toIdx) {
+        // Sample up to 2 intermediate shape points to anchor OSRM to the correct road.
+        // Skip points with a stopId — those are stop locations that may have been
+        // removed from the route; forcing OSRM through them creates ghost-stop artifacts.
+        const count = toIdx - fromIdx;
+        const step = Math.max(1, Math.floor(count / 3));
+        for (let j = fromIdx + step; j < toIdx; j += step) {
+          const pt = shapePoints[j];
+          if (pt.stopId) continue; // road-geometry only, never stop positions
+          const lat = Number(pt.coordinates?.latitude ?? 0);
+          const lon = Number(pt.coordinates?.longitude ?? 0);
+          if (lat !== 0 && lon !== 0) waypoints.push({ lat, lon });
+        }
+      }
+      // Reversed pair: no intermediate waypoints — OSRM routes directly A→B
+    }
+  }
+
+  return waypoints;
+}

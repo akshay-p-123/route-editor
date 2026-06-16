@@ -85,7 +85,7 @@ export function buildDirectionsByGroup(
     if (!gid) continue;
     if (!map.has(gid)) map.set(gid, []);
     const dirs = map.get(gid)!;
-    const name = trip.direction?.name ?? "Loop";
+    const name = trip.direction?.name?.trim() || "Loop";
     const dirId = trip.direction?.id != null ? Number(trip.direction.id) : null;
     if (!dirs.find((d) => d.name === name)) dirs.push({ name, dirId });
   }
@@ -115,7 +115,7 @@ export async function loadMTDRoute(
   const candidates = allTrips.filter(
     (t) =>
       t.route?.routeGroupId === group.id &&
-      (t.direction?.name ?? "Loop") === dirName &&
+      (dirName === "" || (t.direction?.name?.trim() || "Loop") === dirName) &&
       !!t.shapeId
   );
 

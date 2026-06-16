@@ -5,3 +5,5 @@ docker-compose.yml
 supabase
 handoff.md
 .vscode
+.planning
+CLAUDE.md

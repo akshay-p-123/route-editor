@@ -312,7 +312,7 @@ export default function RoutePicker({ onNewRoute }: RoutePickerProps) {
                       {group.routeGroupName}
                     </span>
                     {isModified && (
-                      <span className="text-[10px] font-semibold text-amber-500 shrink-0">
+                      <span className="text-[10px] font-semibold text-orange-500 shrink-0">
                         Modified
                       </span>
                     )}
@@ -334,9 +334,34 @@ export default function RoutePicker({ onNewRoute }: RoutePickerProps) {
                           </li>
                         ))
                       ) : dirs.length === 0 ? (
-                        <li className="px-3 py-1.5 text-xs text-muted-foreground">
-                          No directions available
-                        </li>
+                        (() => {
+                          const key = `${group.id}:`;
+                          const isActive = isActiveGroup && selectedDirection === "";
+                          const isLoading = loadingKey === key;
+                          const hasError = errorKey === key;
+                          return (
+                            <li key="">
+                              <button
+                                onClick={() => handleDirectionSelect(group, "")}
+                                disabled={isLoading}
+                                className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-left text-sm transition-colors ${
+                                  hasError
+                                    ? "text-destructive hover:bg-destructive/10"
+                                    : isActive
+                                    ? "bg-accent font-medium"
+                                    : "hover:bg-accent/50"
+                                } disabled:opacity-50`}
+                                title={hasError ? "Failed to load stops — tap to retry" : undefined}
+                              >
+                                <span
+                                  className="w-1.5 h-1.5 rounded-full shrink-0"
+                                  style={{ backgroundColor: hasError ? "#ef4444" : bg }}
+                                />
+                                {isLoading ? "Loading…" : hasError ? "Loop — retry" : "Loop"}
+                              </button>
+                            </li>
+                          );
+                        })()
                       ) : (
                         dirs.map(({ name: dirName }) => {
                           const key = `${group.id}:${dirName}`;

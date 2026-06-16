@@ -117,11 +117,10 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
     [stopsData]
   );
 
-  // ── OSRM routing for modified line ──────────────────────────────────────────
+  // ── Route line for modified/custom routes ───────────────────────────────────
   const hasShape = shapePoints.length > 0;
   useEffect(() => {
-    // Skip OSRM only when the MTD shape is available and no edits have been made yet.
-    // Saved routes with no shape (shapePoints=[]) always need OSRM to draw their line.
+    // Unmodified MTD routes: no override needed, map renders the original shape layer.
     if ((!isDirty && !isCustom && hasShape) || stops.length < 2 || !routePreviewEnabled) {
       setModifiedCoords(null);
       setSuspiciousRoute(false);
@@ -129,25 +128,20 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
       return;
     }
 
-    // Show loading indicator immediately when preview is enabled.
     setRouteComputing(true);
 
-    // Claim this request slot. The async callback below only applies its result
-    // if the slot hasn't been taken by a newer edit (race condition fix).
     const myId = ++requestIdRef.current;
 
     const timer = setTimeout(async () => {
       const waypoints = stops.map((s) => ({ lat: s.stop_lat, lon: s.stop_lon }));
       const result = await routeWithOSRM(waypoints);
 
-      // Discard if a newer edit started while we were waiting
       if (requestIdRef.current !== myId) return;
 
       setRouteComputing(false);
 
       if (result) {
         if (result.suspicious) {
-          // OSRM returned an unreasonably long detour — use shape-segment fallback
           setModifiedCoords(buildModifiedGeometry(stops, shapePoints));
           setSuspiciousRoute(true);
         } else {
@@ -155,11 +149,10 @@ export default function RouteMap({ shapePoints, routeColor }: RouteMapProps) {
           setSuspiciousRoute(false);
         }
       } else {
-        // OSRM unavailable — fall back to shape-segment approach
         setModifiedCoords(buildModifiedGeometry(stops, shapePoints));
         setSuspiciousRoute(false);
       }
-    }, 800);
+    }, 300);
 
     return () => {
       clearTimeout(timer);
