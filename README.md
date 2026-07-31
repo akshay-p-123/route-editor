@@ -101,8 +101,7 @@ Transit data: MTD API v3 at api.mtd.dev; MTD GTFS static feed; MTD GTFS-RT trip 
 
 - Hopper routes are not yet supported, nor are the many variants an MTD route can have (such as Green)
 - I've tested route editing/creation quite a bit, but there are definitely still small problems with it
-- Travel time estimates are dubious
-- Need to strike a better distinction between editing within/outside of a reroute (UX)
+- GTFS-RT delay estimates need some more testing
 
 
 ## Planned improvements
