@@ -1,0 +1,16 @@
+# Installed to /etc/systemd/system/route-editor-api.service on the droplet — not read from the repo at runtime.
+[Unit]
+Description=MTD Route Editor API (containerized)
+After=docker.service network-online.target
+Requires=docker.service
+
+[Service]
+EnvironmentFile=/opt/route-editor/image.env
+ExecStartPre=-/usr/bin/docker rm -f route-editor-api
+ExecStart=/usr/bin/docker run --rm --name route-editor-api -p 8000:8000 --env-file /opt/route-editor/.env ${BACKEND_IMAGE}
+ExecStop=/usr/bin/docker stop route-editor-api
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
