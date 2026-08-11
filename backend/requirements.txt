@@ -6,6 +6,7 @@ python-dotenv>=1.0.0
 pydantic>=2.7.0
 pydantic-settings>=2.3.0
 py-staticmaps>=0.4.0
+requests>=2.31.0
 s2sphere>=0.2.5
 Pillow>=10.0.0
 gtfs-kit>=7.0.0
