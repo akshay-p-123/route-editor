@@ -1,13 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-
-const BACKEND = process.env.BACKEND_URL ?? "http://localhost:8000";
-
-function authHeaders(req: NextRequest): Record<string, string> {
-  const h: Record<string, string> = { "Content-Type": "application/json" };
-  const auth = req.headers.get("authorization");
-  if (auth) h["Authorization"] = auth;
-  return h;
-}
+import { authHeaders, BACKEND } from "@/lib/apiProxy";
 
 export async function GET(
   req: NextRequest,

@@ -1,17 +1,15 @@
+import { authHeaders, BACKEND } from "@/lib/apiProxy";
+
 export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string; routeId: string }> }
 ) {
   const { id, routeId } = await params;
-  const authHeader = req.headers.get("authorization");
   const res = await fetch(
-    `${process.env.BACKEND_URL}/api/reroutes/${id}/routes/${routeId}`,
+    `${BACKEND}/api/reroutes/${id}/routes/${routeId}`,
     {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authHeader ? { Authorization: authHeader } : {}),
-      },
+      headers: authHeaders(req),
     }
   );
   return res;
@@ -22,15 +20,11 @@ export async function DELETE(
   { params }: { params: Promise<{ id: string; routeId: string }> }
 ) {
   const { id, routeId } = await params;
-  const authHeader = req.headers.get("authorization");
   const res = await fetch(
-    `${process.env.BACKEND_URL}/api/reroutes/${id}/routes/${routeId}`,
+    `${BACKEND}/api/reroutes/${id}/routes/${routeId}`,
     {
       method: "DELETE",
-      headers: {
-        "Content-Type": "application/json",
-        ...(authHeader ? { Authorization: authHeader } : {}),
-      },
+      headers: authHeaders(req),
     }
   );
   return res;

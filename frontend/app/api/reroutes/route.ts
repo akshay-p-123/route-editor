@@ -1,24 +1,18 @@
+import { authHeaders, BACKEND } from "@/lib/apiProxy";
+
 export async function GET(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  const res = await fetch(`${process.env.BACKEND_URL}/api/reroutes`, {
+  const res = await fetch(`${BACKEND}/api/reroutes`, {
     method: "GET",
-    headers: {
-      "Content-Type": "application/json",
-      ...(authHeader ? { Authorization: authHeader } : {}),
-    },
+    headers: authHeaders(req),
   });
   return res;
 }
 
 export async function POST(req: Request) {
-  const authHeader = req.headers.get("authorization");
   const body = await req.json();
-  const res = await fetch(`${process.env.BACKEND_URL}/api/reroutes`, {
+  const res = await fetch(`${BACKEND}/api/reroutes`, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      ...(authHeader ? { Authorization: authHeader } : {}),
-    },
+    headers: authHeaders(req),
     body: JSON.stringify(body),
   });
   return res;
