@@ -10,6 +10,11 @@ export function stopGroupName(name: string): string {
   return idx >= 0 ? name.substring(0, idx) : name;
 }
 
+/** Renumber stop_sequence to the 0-based array index. Non-mutating. */
+export function resequence(stops: EditorStop[]): EditorStop[] {
+  return stops.map((s, i) => ({ ...s, stop_sequence: i }));
+}
+
 /** Flatten stop groups + boarding points into a fast id → info lookup. */
 export function buildStopMap(stopGroups: StopGroup[]): StopMap {
   const map: StopMap = new Map();

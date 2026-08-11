@@ -1,6 +1,6 @@
 import type { QueryClient } from "@tanstack/react-query";
 import { mtd, type RouteGroup, type ShapePoint, type Trip } from "@/lib/api";
-import { nearestStop, type StopMap } from "@/lib/stopUtils";
+import { nearestStop, resequence, type StopMap } from "@/lib/stopUtils";
 import type { EditorStop } from "@/store/editorStore";
 
 // ── Helpers (previously private to RoutePicker) ───────────────────────────────
@@ -19,7 +19,7 @@ function deduplicateConsecutive(stops: EditorStop[]): EditorStop[] {
       out.push(stops[i]);
     }
   }
-  return out.map((s, i) => ({ ...s, stop_sequence: i }));
+  return resequence(out);
 }
 
 export function buildStopsFromPoints(shapePoints: ShapePoint[], stopMap: StopMap): EditorStop[] {

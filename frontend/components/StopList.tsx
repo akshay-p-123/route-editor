@@ -18,6 +18,7 @@ import {
 import { CSS } from "@dnd-kit/utilities";
 import { useEditorStore, type EditorStop } from "@/store/editorStore";
 import { mtd, type StopSearchResult } from "@/lib/api"; // mtd used in StopReplaceDropdown
+import { resequence } from "@/lib/stopUtils";
 import type { ValidationError } from "@/lib/validation";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Input } from "@/components/ui/input";
@@ -345,10 +346,7 @@ export default function StopList() {
     const oldIdx = ids.indexOf(active.id as string);
     const newIdx = ids.indexOf(over.id as string);
     if (oldIdx === -1 || newIdx === -1) return;
-    const reordered = arrayMove(stops, oldIdx, newIdx).map((s, i) => ({
-      ...s,
-      stop_sequence: i,
-    }));
+    const reordered = resequence(arrayMove(stops, oldIdx, newIdx));
     setStops(reordered);
   }
 

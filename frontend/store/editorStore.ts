@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import type { RouteGroup, StopSearchResult, TravelTimeEstimate } from "@/lib/api";
 import { validateRoute, type ValidationError } from "@/lib/validation";
+import { resequence } from "@/lib/stopUtils";
 
 export interface EditorStop {
   stop_sequence: number;
@@ -168,16 +169,14 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     } else {
       next = [...current, newStop];
     }
-    next = next.map((s, i) => ({ ...s, stop_sequence: i }));
+    next = resequence(next);
 
     const history = snapshot(get());
     set({ stops: next, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, selectedStopId: stop.stopId, history, ...withValidation(next, get().dismissedWarnings) });
   },
 
   removeStop(stopId) {
-    const next = get()
-      .stops.filter((s) => s.stop_id !== stopId)
-      .map((s, i) => ({ ...s, stop_sequence: i }));
+    const next = resequence(get().stops.filter((s) => s.stop_id !== stopId));
 
     const history = snapshot(get());
     set({ stops: next, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, history, ...withValidation(next, get().dismissedWarnings) });
@@ -217,7 +216,7 @@ export const useEditorStore = create<EditorState>((set, get) => ({
     ) return;
     const [item] = arr.splice(fromIndex, 1);
     arr.splice(toIndex, 0, item);
-    const next = arr.map((s, i) => ({ ...s, stop_sequence: i }));
+    const next = resequence(arr);
 
     const history = snapshot(get());
     set({ stops: next, isDirty: true, routePreviewEnabled: false, travelTimeEstimatesStale: true, history, ...withValidation(next, get().dismissedWarnings) });
