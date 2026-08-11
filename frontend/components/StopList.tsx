@@ -350,7 +350,8 @@ export default function StopList() {
     setStops(reordered);
   }
 
-  const stopIds = stops.map((s, i) => `${s.stop_id ?? "custom"}-${i}`);
+  // ponytail: duplicate stop_id yields colliding sortable ids; add an occurrence suffix if loop routes need it
+  const stopIds = stops.map((s, i) => s.stop_id ?? `custom-${i}`);
   const routeName =
     selectedRouteGroup?.routeGroupName ?? customMeta?.name ?? "New Route";
 
@@ -377,7 +378,7 @@ export default function StopList() {
           <SortableContext items={stopIds} strategy={verticalListSortingStrategy}>
             <ul className="py-1">
               {stops.map((stop, index) => {
-                const id = `${stop.stop_id ?? "custom"}-${index}`;
+                const id = stopIds[index];
                 const stopIssues = validationErrors.filter(
                   (e) => e.stopId === stop.stop_id
                 );
