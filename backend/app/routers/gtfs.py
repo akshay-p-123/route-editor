@@ -119,12 +119,12 @@ def _sample_stops(stops: list[dict], max_points: int) -> list[dict]:
 
 # ── OSRM helper ──────────────────────────────────────────────────────────────
 
-async def _osrm_route(stops: list[dict]) -> dict | None:
+async def _osrm_route(stops: list[dict], max_points: int = 12) -> dict | None:
     """Call OSRM route service for a list of stops; return routes[0] or None on failure.
 
     Never raises — warn-don't-crash per D-06.
     """
-    sampled = _sample_stops(stops, 12)
+    sampled = _sample_stops(stops, max_points)
     coord_str = ";".join(f"{s['stop_lon']},{s['stop_lat']}" for s in sampled)
     try:
         async with httpx.AsyncClient(timeout=10) as client:
@@ -1090,13 +1090,13 @@ async def estimate_travel_time(
     classifications = _diff_stop_sequences(original_sorted, proposed_sorted)
 
     # Cumulative OSRM travel time for the proposed sequence
-    osrm_result = await _osrm_route(proposed_sorted) if len(proposed_sorted) >= 2 else None
+    osrm_result = await _osrm_route(proposed_sorted, max_points=100) if len(proposed_sorted) >= 2 else None
     leg_durations = [leg["duration"] for leg in osrm_result["legs"]] if osrm_result else []
 
     # Baseline per-stop cumulative OSRM travel time for the original sequence
     baseline_result = None
     if len(original_sorted) >= 2:
-        baseline_result = await _osrm_route(original_sorted)
+        baseline_result = await _osrm_route(original_sorted, max_points=100)
 
     if len(original_sorted) < 2:
         baseline_cumulative: list[float] = [0.0] * len(original_sorted)
